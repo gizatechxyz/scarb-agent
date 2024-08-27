@@ -451,7 +451,7 @@ docker run -it --rm -p 8080:8080  \
   -e REGISTRY_URL="file:///app/registry" \
   -e PREPROCESS_URL="http://host.docker.internal:3000/preprocess" \ # Here we suppose that your python server is running locally
   -v /your/path/to/registry:/app/registry \
-  orion-runner
+  orion-runner:0.2.4pre3e599d
 ```
 
 When the image is running we can do the E2E test with the following command:
