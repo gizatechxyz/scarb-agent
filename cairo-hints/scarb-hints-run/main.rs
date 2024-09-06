@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     env,
     fs::{self, File},
     io::BufReader,
@@ -9,7 +8,7 @@ use std::{
 use anyhow::{Context, Result};
 use cairo_lang_sierra::program::VersionedProgram;
 use cairo_oracle_hint_processor::{run_1, Error, FuncArgs};
-use cairo_proto_serde::configuration::{Configuration, ServerConfig};
+use cairo_proto_serde::configuration::Configuration;
 use cairo_vm::types::layout_name::LayoutName;
 use camino::Utf8PathBuf;
 use clap::Parser;
@@ -69,6 +68,12 @@ struct Args {
 
     #[clap(long = "args_json", default_value = "")]
     args_json: Option<String>,
+
+    #[clap(long, default_value_t = false)]
+    preprocess: bool,
+
+    #[clap(long, default_value_t = false)]
+    postprocess: bool,
 }
 
 fn validate_layout(value: &str) -> Result<String, String> {
@@ -162,26 +167,14 @@ fn run() -> Result<String> {
         .context("Lock path must be provided either as an argument (--oracle-lock src) or in the Scarb.toml file in the [tool.hints] section.")?;
     let lock_file = File::open(lock_output)?;
     let reader = BufReader::new(lock_file);
-    let mut service_configuration: Configuration = serde_json::from_reader(reader)?;
-
-    let servers_config_path = absolute_path(&package, None, "servers_config", Some(PathBuf::from("servers.json")))
-        .context("Servers config path must be provided either in the Scarb.toml file in the [tool.hints] section or default to servers.json in the project root.")?;
-
-    let config_content = fs::read_to_string(&servers_config_path)?;
-    let mut servers_config: HashMap<String, ServerConfig> =
-        serde_json::from_str(&config_content).context("Failed to parse servers config")?;
+    let service_configuration: Configuration = serde_json::from_reader(reader)?;
 
     let sierra_program = serde_json::from_str::<VersionedProgram>(&fs::read_to_string(&path)?)?
         .into_v1()
         .context("Failed to load Sierra program")?
         .program;
 
-    let preprocess_config = servers_config.remove("preprocess");
-    let postprocess_config = servers_config.remove("postprocess");
-
-    let func_args = get_func_args(&args, &package, preprocess_config)?;
-
-    service_configuration.servers_config = servers_config;
+    let func_args = get_func_args(&args, &package)?;
 
     let result = run_1(
         &service_configuration,
@@ -197,31 +190,23 @@ fn run() -> Result<String> {
         args.proof_mode,
     );
 
-    process_result(result, postprocess_config)
+    process_result(result, args.postprocess)
 }
 
-fn get_func_args(
-    args: &Args,
-    package: &scarb_metadata::PackageMetadata,
-    preprocess_config: Option<ServerConfig>,
-) -> Result<FuncArgs> {
+fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Result<FuncArgs> {
     let inputs_schema = get_inputs_schema(package)?;
     let schema = parse_input_schema(&inputs_schema)
         .map_err(|e| anyhow::anyhow!("Failed to parse input schema: {}", e))?;
 
-    if let Some(preprocess) = preprocess_config {
+    if args.preprocess {
+        let preprocess_url = env::var("PREPROCESS_URL")
+            .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
+
         let body: Value =
             serde_json::from_str(&args.args_json.as_ref().context("Expect --args_json")?)?;
 
-        let url = if preprocess.server_url.ends_with("/preprocess") {
-            preprocess.server_url.to_string()
-        } else if preprocess.server_url.ends_with('/') {
-            format!("{}preprocess", preprocess.server_url)
-        } else {
-            format!("{}/preprocess", preprocess.server_url)
-        };
-
-        let preprocess_result = call_server::<PreprocessResponse>(&url, body)?.args;
+        let preprocess_result =
+            call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;
         process_json_args(&preprocess_result, &schema).map_err(|e| anyhow::anyhow!(e))
     } else if let Some(json_args) = &args.args_json {
         process_json_args(json_args, &schema).map_err(|e| anyhow::anyhow!(e))
@@ -237,28 +222,23 @@ fn get_inputs_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBu
         .context("Inputs schema path must be provided either in the Scarb.toml file in the [tool.hints] section or default to InputsSchema.txt in the project root.")
 }
 
-fn process_result(
-    result: Result<Option<String>, Error>,
-    postprocess_config: Option<ServerConfig>,
-) -> Result<String> {
+fn process_result(result: Result<Option<String>, Error>, postprocess: bool) -> Result<String> {
     match result {
         Ok(return_values) => {
             let cairo_output = return_values.unwrap_or_else(|| "Null".to_string());
-            if let Some(postprocess) = postprocess_config {
-                let url = if postprocess.server_url.ends_with("/postprocess") {
-                    postprocess.server_url.to_string()
-                } else if postprocess.server_url.ends_with('/') {
-                    format!("{}postprocess", postprocess.server_url)
-                } else {
-                    format!("{}/postprocess", postprocess.server_url)
-                };
+
+            if postprocess {
+                let postprocess_url = env::var("POSTPROCESS_URL")
+                    .unwrap_or_else(|_| "http://localhost:3000/postprocess".to_string());
 
                 let body = CairoRunResponse {
                     result: cairo_output,
                     request_id: "None".to_string(),
                 };
 
-                call_server::<Value>(&url, body).map(|v| v.to_string())
+                call_server::<Value>(&postprocess_url, Some(body))
+                    .map(|v| v.to_string())
+                    .map_err(|e| e.into())
             } else {
                 Ok(cairo_output)
             }
@@ -283,8 +263,17 @@ fn process_result(
     }
 }
 
-fn call_server<T: DeserializeOwned>(url: &str, body: impl Serialize) -> Result<T> {
+fn call_server<T: DeserializeOwned>(
+    url: &str,
+    body: Option<impl Serialize>,
+) -> Result<T, reqwest::Error> {
     let client = reqwest::blocking::Client::new();
-    let response = client.post(url).json(&body).send()?;
-    response.error_for_status()?.json().map_err(Into::into)
+    let mut request = client.post(url);
+
+    if let Some(body) = body {
+        request = request.json(&body);
+    }
+
+    let response = request.send()?;
+    response.error_for_status()?.json()
 }
