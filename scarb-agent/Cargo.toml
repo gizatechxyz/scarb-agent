@@ -1,27 +1,27 @@
 [package]
-name = "cairo-hints"
+name = "cairo-agent"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "scarb-hints-generate"
-path = "scarb-hints-generate/main.rs"
+name = "scarb-agent-generate"
+path = "scarb-agent-generate/main.rs"
 
 [[bin]]
-name = "scarb-hints-new"
-path = "scarb-hints-new/main.rs"
+name = "scarb-agent-new"
+path = "scarb-agent-new/main.rs"
 
 [[bin]]
-name = "scarb-hints-run"
-path = "scarb-hints-run/main.rs"
+name = "scarb-agent-run"
+path = "scarb-agent-run/main.rs"
 
 [[bin]]
-name = "scarb-hints-test"
-path = "scarb-hints-test/main.rs"
+name = "scarb-agent-test"
+path = "scarb-agent-test/main.rs"
 
 [lib]
-name = "scarb_hints_lib"
-path = "scarb-hints-lib/lib.rs"
+name = "scarb_agent_lib"
+path = "scarb-agent-lib/lib.rs"
 
 [dependencies]
 bincode = { workspace = true }

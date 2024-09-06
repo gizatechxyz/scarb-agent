@@ -20,7 +20,7 @@ pub fn absolute_path(
     let definitions = arg
         .or_else(|| {
             package
-                .tool_metadata("hints")
+                .tool_metadata("agent")
                 .and_then(|tool_config| tool_config[config_key].as_str().map(PathBuf::from))
         })
         .or(default)?;

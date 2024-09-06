@@ -7,7 +7,7 @@ edition = "2023_10"
 
 [dependencies]
 
-[tool.hints]
+[tool.agent]
 definitions = "proto/oracle.proto"  # required
 # cairo_output = "src"
 # oracle_lock = "Oracle.lock"

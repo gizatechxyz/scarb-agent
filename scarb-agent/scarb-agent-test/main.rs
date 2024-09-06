@@ -10,7 +10,7 @@ use cairo_lang_test_plugin::TestCompilation;
 use cairo_proto_serde::configuration::{Configuration, ServerConfig};
 use cairo_vm::types::layout_name::LayoutName;
 use clap::Parser;
-use scarb_hints_lib::utils::absolute_path;
+use scarb_agent_lib::utils::absolute_path;
 use scarb_metadata::{Metadata, MetadataCommand, PackageMetadata, ScarbCommand, TargetMetadata};
 use scarb_ui::args::PackagesFilter;
 
@@ -101,14 +101,14 @@ fn main() -> Result<()> {
         println!("testing {} ...", package.name);
 
         let lock_output = absolute_path(&package, args.oracle_lock.clone(), "oracle_lock", Some(PathBuf::from("Oracle.lock")))
-            .expect("lock path must be provided either as an argument (--oracle-lock src) or in the Scarb.toml file in the [tool.hints] section.");
+            .expect("lock path must be provided either as an argument (--oracle-lock src) or in the Scarb.toml file in the [tool.agent] section.");
         let lock_file = File::open(lock_output)?;
         let reader = BufReader::new(lock_file);
         let mut service_config: Configuration = serde_json::from_reader(reader)?;
 
         // Get the servers config path
         let servers_config_path = absolute_path(&package, None, "servers_config", Some(PathBuf::from("servers.json")))
-            .expect("servers config path must be provided either in the Scarb.toml file in the [tool.hints] section or default to servers.json in the project root.");
+            .expect("servers config path must be provided either in the Scarb.toml file in the [tool.agent] section or default to servers.json in the project root.");
 
         // Read and parse the servers config file
         let config_content = fs::read_to_string(&servers_config_path).with_context(|| {

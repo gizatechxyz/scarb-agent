@@ -37,7 +37,7 @@ pub fn mk_cairo(canonical_path: &Utf8PathBuf, name: &PackageName, config: &Confi
 
             [dependencies]
 
-            [tool.hints]
+            [tool.agent]
             definitions = "proto/oracle.proto"  # required
             # cairo_output = "src"
             # oracle_lock = "Oracle.lock"

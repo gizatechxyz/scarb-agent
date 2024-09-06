@@ -181,7 +181,7 @@ platinum-prover verify sqrt.proof
 In some cases, you may want to add Cairo Hints to an existing project. To do so, you can skip using the command `scarb hints-new` and manually add the following section to your `Scarb.toml` file:
 
 ```toml
-[tool.hints]
+[tool.agent]
 definitions = "proto/oracle.proto" # path to service definitions
 ```
 

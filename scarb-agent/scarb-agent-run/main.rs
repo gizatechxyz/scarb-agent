@@ -12,8 +12,8 @@ use cairo_proto_serde::configuration::Configuration;
 use cairo_vm::types::layout_name::LayoutName;
 use camino::Utf8PathBuf;
 use clap::Parser;
-use scarb_hints_lib::serialization::{parse_input_schema, process_args, process_json_args};
-use scarb_hints_lib::utils::absolute_path;
+use scarb_agent_lib::serialization::{parse_input_schema, process_args, process_json_args};
+use scarb_agent_lib::utils::absolute_path;
 use scarb_metadata::{MetadataCommand, ScarbCommand};
 use scarb_ui::args::PackagesFilter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -164,7 +164,7 @@ fn run() -> Result<String> {
     }
 
     let lock_output = absolute_path(&package, args.clone().oracle_lock, "oracle_lock", Some(PathBuf::from("Oracle.lock")))
-        .context("Lock path must be provided either as an argument (--oracle-lock src) or in the Scarb.toml file in the [tool.hints] section.")?;
+        .context("Lock path must be provided either as an argument (--oracle-lock src) or in the Scarb.toml file in the [tool.agent] section.")?;
     let lock_file = File::open(lock_output)?;
     let reader = BufReader::new(lock_file);
     let service_configuration: Configuration = serde_json::from_reader(reader)?;
@@ -219,7 +219,7 @@ fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Resu
 
 fn get_inputs_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBuf> {
     absolute_path(package, None, "inputs_schema", Some(PathBuf::from("InputsSchema.txt")))
-        .context("Inputs schema path must be provided either in the Scarb.toml file in the [tool.hints] section or default to InputsSchema.txt in the project root.")
+        .context("Inputs schema path must be provided either in the Scarb.toml file in the [tool.agent] section or default to InputsSchema.txt in the project root.")
 }
 
 fn process_result(result: Result<Option<String>, Error>, postprocess: bool) -> Result<String> {

@@ -25,7 +25,7 @@ Options:
 
 `--definitions` is to pass a `.proto` file location instead of reading from `Scarb.toml`
 
-`--cairo-output` the path to write the `cairo` file generated. It can be define in `Scarb.toml` under `[tool.hints]`. Default is `src`.
+`--cairo-output` the path to write the `cairo` file generated. It can be define in `Scarb.toml` under `[tool.agent]`. Default is `src`.
 
 `--oracle-module` the filename of the generated `cairo` file.
 
@@ -162,7 +162,7 @@ Options:
 In addition to the existing `Scarb.toml` configuration flags described in the [official documentation](https://docs.swmansion.com/scarb/docs/reference/manifest.html), we have added new options tailored to `cairo-hints`.
 
 ```bash
-[tool.hints]
+[tool.agent]
 definitions = "proto/oracle.proto"  # mandatory
 cairo_output = "src"                # optional - default "src"
 oracle_lock = "Oracle.lock"         # optional - default "Oracle.lock"

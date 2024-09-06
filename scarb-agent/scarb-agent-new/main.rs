@@ -9,11 +9,11 @@ mod fsx;
 mod new;
 mod new_cairo;
 mod new_js;
+mod new_python;
 mod new_rust;
 mod new_ts;
-mod new_python;
-mod templates;
 mod restricted_names;
+mod templates;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
