@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use camino::Utf8PathBuf;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use new::{new_package, InitOptions, VersionControl};
 use scarb::core::{Config, PackageName};
 use scarb::ops::{self};
@@ -8,10 +8,7 @@ use scarb::ops::{self};
 mod fsx;
 mod new;
 mod new_cairo;
-mod new_js;
 mod new_python;
-mod new_rust;
-mod new_ts;
 mod restricted_names;
 mod templates;
 
@@ -22,17 +19,6 @@ struct Args {
     path: Utf8PathBuf,
     #[clap(long = "name", value_parser)]
     name: Option<PackageName>,
-    #[clap(long = "lang", value_enum)]
-    lang: Lang,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-#[clap(rename_all = "lower")]
-pub enum Lang {
-    Rust,
-    Js,
-    Ts,
-    Python,
 }
 
 /// Arguments accepted by the `init` command.
@@ -53,7 +39,6 @@ pub struct NewArgs {
     pub path: Utf8PathBuf,
     #[command(flatten)]
     pub init: InitArgs,
-    pub lang: Lang,
 }
 
 pub fn run(args: NewArgs, config: &Config) -> Result<()> {
@@ -68,7 +53,6 @@ pub fn run(args: NewArgs, config: &Config) -> Result<()> {
             } else {
                 VersionControl::Git
             },
-            lang: args.lang,
         },
         config,
     )?;
@@ -92,7 +76,6 @@ fn main() {
             name: args.name,
             no_vcs: true,
         },
-        lang: args.lang,
     };
 
     if let Err(err) = run(new_args, &config) {

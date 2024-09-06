@@ -1,9 +1,6 @@
 use crate::new_cairo::mk_cairo;
-use crate::new_js::mk_js;
 use crate::new_python::mk_python;
-use crate::new_rust::mk_rust;
-use crate::new_ts::mk_ts;
-use crate::{fsx, restricted_names, Lang};
+use crate::{fsx, restricted_names};
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use indoc::formatdoc;
@@ -23,7 +20,6 @@ pub struct InitOptions {
     pub path: Utf8PathBuf,
     pub name: Option<PackageName>,
     pub vcs: VersionControl,
-    pub lang: Lang,
 }
 
 #[derive(Debug)]
@@ -51,7 +47,6 @@ pub fn new_package(opts: InitOptions, config: &Config) -> Result<NewResult> {
             path: opts.path.clone(),
             name: name.clone(),
             version_control: opts.vcs,
-            lang: opts.lang,
         },
         config,
     )
@@ -98,7 +93,6 @@ struct MkOpts {
     path: Utf8PathBuf,
     name: PackageName,
     version_control: VersionControl,
-    lang: Lang,
 }
 
 fn mk(
@@ -106,7 +100,6 @@ fn mk(
         path,
         name,
         version_control,
-        lang,
     }: MkOpts,
     config: &Config,
 ) -> Result<()> {
@@ -175,12 +168,7 @@ fn mk(
         )?;
     }
 
-    match lang {
-        Lang::Rust => mk_rust(&canonical_path, &name, &config)?,
-        Lang::Js => mk_js(&canonical_path, &name, &config)?,
-        Lang::Ts => mk_ts(&canonical_path, &name, config)?,
-        Lang::Python => mk_python(&canonical_path, &name, config)?,
-    }
+    mk_python(&canonical_path, &name, config)?;
     mk_cairo(&canonical_path, &name, &config)?;
 
     Ok(())

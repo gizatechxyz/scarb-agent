@@ -7,7 +7,6 @@ members = [
     "cairo-oracle-hint-processor",
     "scarb-agent",
 ]
-exclude = ["examples/rust_complex/rust", "examples/rust_sqrt/rust"]
 
 [workspace.package]
 version = "0.1.1"
