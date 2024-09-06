@@ -143,7 +143,7 @@ fn parse_type(type_str: &str) -> Result<InputType, String> {
         "i16" => Ok(InputType::I16),
         "u8" => Ok(InputType::U8),
         "i8" => Ok(InputType::I8),
-        "f64" => Ok(InputType::F64),
+        "F64" => Ok(InputType::F64),
         "felt252" => Ok(InputType::Felt252),
         "ByteArray" => Ok(InputType::ByteArray),
         "bool" => Ok(InputType::Bool),
@@ -192,24 +192,25 @@ fn parse_value(
             let string = value
                 .as_str()
                 .ok_or_else(|| "Expected string for Felt252".to_string())?;
-            let processed_string =
-                if !string.starts_with("0x") && !string.chars().all(|c| c.is_digit(10)) {
-                    // Convert to hexadecimal if it's not already hex or decimal
-                    assert!(
-                        string.len() <= 31,
-                        "Input string must be 31 characters or less"
-                    );
-                    format!(
-                        "0x{}",
-                        string
-                            .as_bytes()
-                            .iter()
-                            .map(|b| format!("{:02x}", b))
-                            .collect::<String>()
-                    )
-                } else {
-                    string.to_string()
-                };
+            let processed_string = if !string.starts_with("0x")
+                && !string.chars().all(|c| c.is_digit(10) || c == '-')
+            {
+                // Convert to hexadecimal if it's not already hex or decimal
+                assert!(
+                    string.len() <= 31,
+                    "Input string must be 31 characters or less"
+                );
+                format!(
+                    "0x{}",
+                    string
+                        .as_bytes()
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>()
+                )
+            } else {
+                string.to_string()
+            };
 
             Ok(vec![FuncArg::Single(
                 Felt252::from_str(&processed_string).map_err(|e| e.to_string())?,
@@ -339,7 +340,8 @@ mod tests {
             e: ByteArray
             f: AnotherNestedStruct
             g: bool
-            h: f64
+            h: F64
+            i: Span<F64>
         }
 
         NestedStruct {
@@ -384,13 +386,14 @@ mod tests {
                 "b": 2
             },
             "g": true,
-            "h": 0.5
+            "h": 0.5,
+            "i": [0.5, 0.5]
         }"#;
 
         let result = process_json_args(json, &input_schema).unwrap();
 
         // Assertions
-        assert_eq!(result.0.len(), 11);
+        assert_eq!(result.0.len(), 12);
         assert_eq!(result.0[0], FuncArg::Single(Felt252::from(42)));
         assert_eq!(
             result.0[1],
@@ -447,6 +450,13 @@ mod tests {
         assert_eq!(
             result.0[10],
             FuncArg::Single(Felt252::from_hex("0x80000000").unwrap())
+        );
+        assert_eq!(
+            result.0[11],
+            FuncArg::Array(vec![
+                Felt252::from_hex("0x80000000").unwrap(),
+                Felt252::from_hex("0x80000000").unwrap(),
+            ])
         );
     }
 }
