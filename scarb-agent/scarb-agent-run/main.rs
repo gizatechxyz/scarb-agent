@@ -37,17 +37,17 @@ struct Args {
     proof_mode: bool,
 
     #[clap(
-        long = "cairo_pie_output",
-        conflicts_with_all = ["proof_mode", "air_private_input", "air_public_input"]
+        long = "cairo-pie-output",
+        conflicts_with_all = ["proof-mode", "air-private-input", "air-public-input"]
     )]
     cairo_pie_output: Option<PathBuf>,
 
-    #[clap(long = "air_public_input", requires = "proof_mode")]
+    #[clap(long = "air-public-input", requires = "proof-mode")]
     air_public_input: Option<PathBuf>,
 
     #[clap(
         long = "air_private_input",
-        requires_all = ["proof_mode", "trace_file", "memory_file"] 
+        requires_all = ["proof-mode", "trace-file", "memory-file"] 
     )]
     air_private_input: Option<PathBuf>,
 
@@ -66,7 +66,7 @@ struct Args {
     #[clap(long = "args", default_value = "", value_parser = process_args)]
     args: Option<FuncArgs>,
 
-    #[clap(long = "args_json", default_value = "")]
+    #[clap(long = "args-json", default_value = "")]
     args_json: Option<String>,
 
     #[clap(long, default_value_t = false)]
