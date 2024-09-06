@@ -58,7 +58,6 @@ cairo-lang-test-plugin = { workspace = true }
 reqwest = { workspace = true }
 handlebars = "6.0.0"
 cainome-cairo-serde = { workspace = true }
-tokio = "1.35.1"
 
 [dev-dependencies]
 hex = "0.4.3"

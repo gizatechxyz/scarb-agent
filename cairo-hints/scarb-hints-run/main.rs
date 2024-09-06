@@ -114,9 +114,8 @@ struct CairoRunResponse {
     request_id: String,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let result = match run().await {
+fn main() -> Result<()> {
+    let result = match run() {
         Ok(return_values) => {
             let parsed_data: Value = serde_json::from_str(&return_values)?;
             json!({
@@ -137,7 +136,7 @@ async fn main() -> Result<()> {
     std::process::exit(if result["status"] == "error" { 1 } else { 0 });
 }
 
-async fn run() -> Result<String> {
+fn run() -> Result<String> {
     let args: Args = Args::parse();
     let metadata = MetadataCommand::new().inherit_stderr().exec()?;
     let package = args.packages_filter.match_one(&metadata)?;
@@ -145,7 +144,6 @@ async fn run() -> Result<String> {
     if !args.no_build {
         ScarbCommand::new().arg("build").run()?;
     }
-
     let filename = format!("{}.sierra.json", package.name);
     let scarb_target_dir = env::var("SCARB_TARGET_DIR").context("SCARB_TARGET_DIR not set")?;
     let scarb_profile = env::var("SCARB_PROFILE").context("SCARB_PROFILE not set")?;
@@ -181,7 +179,7 @@ async fn run() -> Result<String> {
     let preprocess_config = servers_config.remove("preprocess");
     let postprocess_config = servers_config.remove("postprocess");
 
-    let func_args = get_func_args(&args, &package, preprocess_config).await?;
+    let func_args = get_func_args(&args, &package, preprocess_config)?;
 
     service_configuration.servers_config = servers_config;
 
@@ -199,10 +197,10 @@ async fn run() -> Result<String> {
         args.proof_mode,
     );
 
-    process_result(result, postprocess_config).await
+    process_result(result, postprocess_config)
 }
 
-async fn get_func_args(
+fn get_func_args(
     args: &Args,
     package: &scarb_metadata::PackageMetadata,
     preprocess_config: Option<ServerConfig>,
@@ -223,7 +221,7 @@ async fn get_func_args(
             format!("{}/preprocess", preprocess.server_url)
         };
 
-        let preprocess_result = call_server::<PreprocessResponse>(&url, body).await?.args;
+        let preprocess_result = call_server::<PreprocessResponse>(&url, body)?.args;
         process_json_args(&preprocess_result, &schema).map_err(|e| anyhow::anyhow!(e))
     } else if let Some(json_args) = &args.args_json {
         process_json_args(json_args, &schema).map_err(|e| anyhow::anyhow!(e))
@@ -239,7 +237,7 @@ fn get_inputs_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBu
         .context("Inputs schema path must be provided either in the Scarb.toml file in the [tool.hints] section or default to InputsSchema.txt in the project root.")
 }
 
-async fn process_result(
+fn process_result(
     result: Result<Option<String>, Error>,
     postprocess_config: Option<ServerConfig>,
 ) -> Result<String> {
@@ -260,9 +258,7 @@ async fn process_result(
                     request_id: "None".to_string(),
                 };
 
-                call_server::<Value>(&url, body)
-                    .await
-                    .map(|v| v.to_string())
+                call_server::<Value>(&url, body).map(|v| v.to_string())
             } else {
                 Ok(cairo_output)
             }
@@ -287,12 +283,8 @@ async fn process_result(
     }
 }
 
-async fn call_server<T: DeserializeOwned>(url: &str, body: impl Serialize) -> Result<T> {
-    let client = reqwest::Client::new();
-    let response = client.post(url).json(&body).send().await?;
-    response
-        .error_for_status()?
-        .json()
-        .await
-        .map_err(Into::into)
+fn call_server<T: DeserializeOwned>(url: &str, body: impl Serialize) -> Result<T> {
+    let client = reqwest::blocking::Client::new();
+    let response = client.post(url).json(&body).send()?;
+    response.error_for_status()?.json().map_err(Into::into)
 }
