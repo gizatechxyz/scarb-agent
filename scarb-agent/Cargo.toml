@@ -1,5 +1,5 @@
 [package]
-name = "cairo-agent"
+name = "scarb-agent"
 version.workspace = true
 edition.workspace = true
 

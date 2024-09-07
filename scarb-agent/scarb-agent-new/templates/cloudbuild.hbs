@@ -1,8 +1,9 @@
 steps:
   - name: "ubuntu"
     script: |
-      sed -n 's/^name = "\(.*\)"/\1/p' Scarb.toml > project_name.txt
-      sed -n 's/^version = "\(.*\)"/\1/p' Scarb.toml > version.txt
+      cd cairo
+      sed -n 's/^name = "\(.*\)"/\1/p' Scarb.toml > ../project_name.txt
+      sed -n 's/^version = "\(.*\)"/\1/p' Scarb.toml > ../version.txt
     id: GET_PROJECT_NAME
     waitFor: ["-"]
   - name: "gcr.io/cloud-builders/docker"
@@ -15,9 +16,10 @@ steps:
   - name: "ubuntu"
     script: |
       apt-get update
-      apt-get install -y curl
+      apt-get install -y curl git
       sleep 1
       curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh -s -- -v 2.7.0
+      cd cairo
       $HOME/.local/bin/scarb build
     id: BUILD_CAIRO
 
@@ -28,8 +30,9 @@ steps:
     script: |
       servers_file=$(find . -path "./registry" -prune -o -name "servers.json" -print)
       oracle_file=$(find . -path "./registry" -prune -o -name "Oracle.lock" -print)
+      schema_file=$(find . -path "./registry" -prune -o -name "InputsSchema.txt" -print)
       sierra_file=$(find . -path "./registry" -prune -o -name "*.sierra.json" -print)
-      if [ -z "$servers_file" ] || [ -z "$oracle_file" ] || [ -z "$sierra_file" ]; then
+      if [ -z "$servers_file" ] || [ -z "$oracle_file" ] || [ -z "$schema_file" ] || [ -z "$sierra_file" ]; then
         echo "Missing required files"
         exit 1
       fi
@@ -37,6 +40,7 @@ steps:
       echo $registry_path > registry_path.txt
       gcloud storage cp $servers_file $registry_path/servers.json
       gcloud storage cp $oracle_file $registry_path/Oracle.lock
+      gcloud storage cp $schema_file $registry_path/InputsSchema.txt
       gcloud storage cp $sierra_file $registry_path/programs/$(basename $sierra_file)
     id: UPLOAD_REGISTRY
     waitFor:
@@ -44,7 +48,6 @@ steps:
 
   - name: "ubuntu"
     script: |
-      sed -i s@%AGENT_NAME%@$(cat project_name.txt)@g run-service.yaml
       sed -i s@%PYTHON_SERVER_IMAGE%@$(cat project_name.txt):$(cat version.txt)@g run-service.yaml
       sed -i s@%REGISTRY_PATH%@$(cat registry_path.txt)@g run-service.yaml
     id: REPLACE_YAML_VALUE
@@ -67,8 +70,35 @@ steps:
       - PUSH_PYTHON_SERVER
       - REPLACE_YAML_VALUE
 
+  # - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+  #   entrypoint: gcloud
+  #   args:
+  #     [
+  #       "run",
+  #       "services",
+  #       "set-iam-policy",
+  #       "my-cloud-run-service",
+  #       "policy.yaml",
+  #       "--region",
+  #       "${_REGION}",
+  #       "--quiet",
+  #     ]
+  #   id: ALLOW_UNAUTHENTICATED
+  #   waitFor:
+  #     - DEPLOY_MULTICONTAINER
+
 substitutions:
   _AGENTS_BUCKET: gs://giza-platfrom-misc
 
+# comment out the following line if you want to run Cloud Build with the existing
+# service account with the following roles.
+# * roles/iam.serviceAccountUser
+# * roles/storage.objectViewer
+# * roles/logging.logWriter
+# * roles/artifactregistry.createOnPushWriter
+# * roles/run.admin
+# serviceAccount: "projects/${_GCP_PROJECT}/serviceAccounts/${_SA_NAME}@${_GCP_PROJECT}.iam.gserviceaccount.com"
+
 options:
   dynamic_substitutions: true
+  # logging: CLOUD_LOGGING_ONLY
