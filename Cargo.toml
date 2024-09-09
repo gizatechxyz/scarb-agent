@@ -11,7 +11,7 @@ members = [
 [workspace.package]
 version = "0.1.1"
 edition = "2021"
-repository = "https://github.com/gizatechxyz/cairo-hints/"
+repository = "https://github.com/gizatechxyz/scarb-agent/"
 license = "Apache-2.0"
 license-file = "LICENSE"
 
