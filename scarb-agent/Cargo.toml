@@ -43,7 +43,7 @@ cairo-felt = { workspace = true }
 cairo-vm = { workspace = true }
 camino = { workspace = true }
 clap = { workspace = true }
-indoc = { workspace = true }
+indoc.workspace = true
 itertools = { workspace = true }
 num-bigint = { workspace = true }
 once_cell = { workspace = true }
@@ -58,6 +58,9 @@ cairo-lang-test-plugin = { workspace = true }
 reqwest = { workspace = true }
 handlebars = "6.0.0"
 cainome-cairo-serde = { workspace = true }
+dialoguer = "0.10.4"
+gix = "0.66.0"
+colored.workspace = true
 
 [dev-dependencies]
 hex = "0.4.3"

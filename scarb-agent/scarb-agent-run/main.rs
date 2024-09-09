@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env,
     fs::{self, File},
     io::BufReader,
@@ -8,7 +9,7 @@ use std::{
 use anyhow::{Context, Result};
 use cairo_lang_sierra::program::VersionedProgram;
 use cairo_oracle_hint_processor::{run_1, Error, FuncArgs};
-use cairo_proto_serde::configuration::Configuration;
+use cairo_proto_serde::configuration::{Configuration, ServerConfig};
 use cairo_vm::types::layout_name::LayoutName;
 use camino::Utf8PathBuf;
 use clap::Parser;
@@ -167,7 +168,21 @@ fn run() -> Result<String> {
         .context("Lock path must be provided either as an argument (--oracle-lock src) or in the Scarb.toml file in the [tool.agent] section.")?;
     let lock_file = File::open(lock_output)?;
     let reader = BufReader::new(lock_file);
-    let service_configuration: Configuration = serde_json::from_reader(reader)?;
+    let mut service_configuration: Configuration = serde_json::from_reader(reader)?;
+
+    // Get the servers config path using absolute_path
+    let servers_config_path = absolute_path(&package, None, "servers_config", Some(PathBuf::from("servers.json")))
+        .expect("servers config path must be provided either in the Scarb.toml file in the [tool.agent] section or default to servers.json in the project root.");
+
+    // Read and parse the servers config file
+    let config_content = fs::read_to_string(&servers_config_path).map_err(|e| Error::IO(e))?;
+    let servers_config: HashMap<String, ServerConfig> = serde_json::from_str(&config_content)
+        .map_err(|e| {
+            Error::ServersConfigFileError(format!("Failed to parse servers config: {}", e))
+        })?;
+
+    // Add the servers_config to the Configuration
+    service_configuration.servers_config = servers_config;
 
     let sierra_program = serde_json::from_str::<VersionedProgram>(&fs::read_to_string(&path)?)?
         .into_v1()

@@ -1,9 +1,11 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::Parser;
+use colored::*;
+use dialoguer::{theme::ColorfulTheme, Confirm};
 use new::{new_package, InitOptions, VersionControl};
 use scarb::core::{Config, PackageName};
-use scarb::ops::{self};
+use scarb::ops;
 
 mod fsx;
 mod new;
@@ -21,64 +23,101 @@ struct Args {
     name: Option<PackageName>,
 }
 
-/// Arguments accepted by the `init` command.
-#[derive(Parser, Clone, Debug)]
-pub struct InitArgs {
-    /// Set the resulting package name, defaults to the directory name.
-    #[arg(long)]
-    pub name: Option<PackageName>,
-
-    /// Do not initialize a new Git repository.
-    #[arg(long)]
-    pub no_vcs: bool,
+pub(crate) struct ProjectConfig {
+    preprocess: bool,
+    postprocess: bool,
+    agent_api: bool,
+    oracle: bool,
 }
 
-/// Arguments accepted by the `new` command.
-#[derive(Parser, Clone, Debug)]
-pub struct NewArgs {
-    pub path: Utf8PathBuf,
-    #[command(flatten)]
-    pub init: InitArgs,
-}
+fn run(args: Args, config: &Config) -> Result<()> {
+    print_welcome_message();
 
-pub fn run(args: NewArgs, config: &Config) -> Result<()> {
-    let _result = new_package(
+    let project_config = get_project_config()?;
+    let result = new_package(
         InitOptions {
-            name: args.init.name,
+            name: args.name,
             path: args.path,
-            // At the moment, we only support Git but ideally, we want to
-            // support more VCS and allow user to explicitly specify which VCS to use.
-            vcs: if args.init.no_vcs {
-                VersionControl::NoVcs
-            } else {
-                VersionControl::Git
-            },
+            vcs: VersionControl::Git,
         },
         config,
+        &project_config,
     )?;
+
+    println!("\n{}", "Project created successfully! 🥳".green().bold());
+    println!("Project name: {}", result.name.to_string().cyan());
+    println!("\n{}", "Next steps:".yellow());
+    println!("1. cd into your project directory");
+    println!(
+        "2. Run {} to generate agent code",
+        "`scarb agent-generate`".cyan()
+    );
+    println!("3. Run {} to build your project", "`scarb build`".cyan());
 
     Ok(())
 }
 
-fn exit_with_error(err: Error) {
-    println!("Encountered error {}", err);
-    std::process::exit(1);
+fn get_project_config() -> Result<ProjectConfig> {
+    let theme = ColorfulTheme::default();
+    println!("\n{}", "Project Configuration:".yellow().bold());
+
+    let preprocess = Confirm::with_theme(&theme)
+        .with_prompt("Do you plan preprocessing in your project?")
+        .interact()?;
+    let postprocess = Confirm::with_theme(&theme)
+        .with_prompt("Do you plan postprocessing in your project?")
+        .interact()?;
+    let agent_api = Confirm::with_theme(&theme)
+        .with_prompt("Are you planning to call a smart contract through the Agent-API?")
+        .interact()?;
+    let oracle = Confirm::with_theme(&theme)
+        .with_prompt("Are you planning to create and interact with an Oracle?")
+        .interact()?;
+
+    Ok(ProjectConfig {
+        preprocess,
+        postprocess,
+        agent_api,
+        oracle,
+    })
+}
+
+fn print_welcome_message() {
+    let ascii_art = r#"
+
+    _____                _                                _   
+    / ____|              | |         /\                   | |  
+   | (___   ___ __ _ _ __| |__      /  \   __ _  ___ _ __ | |_ 
+    \___ \ / __/ _` | '__| '_ \    / /\ \ / _` |/ _ | '_ \| __|
+    ____) | (_| (_| | |  | |_) |  / ____ | (_| |  __| | | | |_ 
+   |_____/ \___\__,_|_|  |_.__/  /_/    \_\__, |\___|_| |_|\__|
+                                           __/ |               
+                                          |___/                
+    
+    "#;
+    println!("{}", ascii_art.bright_cyan());
+    println!("{}", "Welcome to Scarb Agent!".green().bold());
+    println!(
+        "\n{}",
+        "Scarb Agent is all you need to build provable agents ready for deployment on the Giza platform."
+            .bright_yellow()
+    );
+    println!(
+        "{}",
+        "Prove only what you need to prove! Scarb Agent makes it easy to implement Cairo programs that can interact with custom oracles."
+            .bright_yellow()
+    );
+    println!("\n{}", "Let's set up your new project.".bright_yellow());
+
+    println!("{}", "-------------------------------------".bright_blue());
 }
 
 fn main() {
     let args: Args = Args::parse();
-
     let manifest_path = ops::find_manifest_path(None).unwrap();
     let config = Config::builder(manifest_path).build().unwrap();
-    let new_args = NewArgs {
-        path: args.path,
-        init: InitArgs {
-            name: args.name,
-            no_vcs: true,
-        },
-    };
-
-    if let Err(err) = run(new_args, &config) {
-        exit_with_error(err);
+    if let Err(err) = run(args, &config) {
+        eprintln!("{}: {}", "Error".red().bold(), err);
+        std::process::exit(1);
     }
 }
