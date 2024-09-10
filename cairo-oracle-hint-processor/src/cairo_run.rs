@@ -1421,11 +1421,9 @@ fn serialize_output_inner<'a>(
                     } else {
                         f64::NAN
                     };
-                    
                     let json_number = serde_json::Number::from_f64(fl).unwrap();
                     return JsonValue::Number(json_number);
                 }
-            
             }
 
             // Check if this struct is a ByteArray
@@ -1475,7 +1473,6 @@ fn serialize_output_inner<'a>(
                     };
                 }
             }
-            
             // If it's not a Span, proceed with normal struct serialization
             let mut json_object = serde_json::Map::new();
             for (index, member_type_id) in info.members.iter().enumerate() {

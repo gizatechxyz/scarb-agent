@@ -130,6 +130,7 @@ pub fn serialize_cairo_serde(
             let value = value
                 .as_object()
                 .expect(format!("must be an object to serialize as message {message_ty}").as_str());
+            
             for field in message_config {
                 if let Some(field_value) = value.get(&field.name) {
                     result.append(&mut serialize_cairo_serde(config, &field.ty, field_value));

@@ -1,0 +1,67 @@
+[package]
+name = "scarb-agent"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "scarb-agent-generate"
+path = "scarb-agent-generate/main.rs"
+
+[[bin]]
+name = "scarb-agent-new"
+path = "scarb-agent-new/main.rs"
+
+[[bin]]
+name = "scarb-agent-run"
+path = "scarb-agent-run/main.rs"
+
+[[bin]]
+name = "scarb-agent-test"
+path = "scarb-agent-test/main.rs"
+
+[lib]
+name = "scarb_agent_lib"
+path = "scarb-agent-lib/lib.rs"
+
+[dependencies]
+bincode = { workspace = true }
+cairo-proto-build = { workspace = true }
+env_logger = { workspace = true }
+anyhow = { workspace = true }
+dunce = { workspace = true }
+cairo-lang-casm = { workspace = true }
+cairo-lang-compiler = { workspace = true }
+cairo-lang-filesystem = { workspace = true }
+cairo-lang-runner = { workspace = true }
+cairo-lang-sierra = { workspace = true }
+cairo-lang-sierra-to-casm = { workspace = true }
+cairo-lang-sierra-type-size = { workspace = true }
+cairo-lang-utils = { workspace = true }
+cairo-oracle-hint-processor = { workspace = true }
+cairo-proto-serde = { workspace = true }
+cairo-felt = { workspace = true }
+cairo-vm = { workspace = true }
+camino = { workspace = true }
+clap = { workspace = true }
+indoc.workspace = true
+itertools = { workspace = true }
+num-bigint = { workspace = true }
+once_cell = { workspace = true }
+scarb = { workspace = true }
+scarb-metadata = { workspace = true }
+scarb-ui = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+cairo-lang-hints-test-runner = { workspace = true }
+cairo-lang-test-plugin = { workspace = true }
+reqwest = { workspace = true }
+handlebars = "6.0.0"
+cainome-cairo-serde = { workspace = true }
+dialoguer = "0.10.4"
+gix = "0.66.0"
+colored.workspace = true
+
+[dev-dependencies]
+hex = "0.4.3"
+tempfile.workspace = true

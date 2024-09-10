@@ -290,7 +290,7 @@ impl<'a> Rpc1HintProcessor<'a> {
                     "Unexpected response format. Expected an object, got: {:?}",
                     response_json
                 ))));
-            };            
+            };
 
             let data = serialize_cairo_serde(self.configuration, &configuration.output, &output);
             res_segment.write_data(data.iter()).map_err(|e| {
