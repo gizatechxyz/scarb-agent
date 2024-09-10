@@ -1,15 +1,17 @@
 # Scarb Agent
 
+Scarb Agent simplifies the creation of Cairo programs that interact seamlessly with constrained and unconstrained oracles, enabling developers to prove only the necessary components of their agents.
+
 Scarb Agent is all you need to build provable agents ready for deployment on the [Giza](https://www.gizatech.xyz/) platform.
-Prove only what you need to prove! Scarb Agent makes it easy to implement Cairo programs that can interact with custom oracles.
 
-**Key Features:**
+## ✨ Key Features:
 
-- Preprocess and postprocess data surrounding the execution of Cairo programs.
-- Execute cross-chain smart contracts during your Cairo program runtime.
-- Design and deploy both constrained and unconstrained custom oracles.
+- **Provable Cairo Programs**: Easily develop Cairo programs to prove the critical logic of your agent.
+- **Custom Oracles**: Design and deploy both constrained and unconstrained oracles that operate concurrently with your Cairo programs.
+- **Data Preprocessing and Postprocessing**: Manage data before and after the execution of Cairo programs.
+- **Cross-chain Smart Contract Execution**: Enhance your Cairo programs with the capability to execute cross-chain smart contracts during its runtime.
 
-## Prerequisites
+##  Prerequisites
 
 - Install `protoc` from [gRPC](https://grpc.io/docs/protoc-installation/).
 - Download `scarb` from [Software Mansion's repository](https://github.com/software-mansion/scarb/releases).
@@ -22,19 +24,16 @@ To install Scarb Agent, use the following command:
 cargo install --git https://github.com/gizatechxyz/scarb-agent/
 ```
 
+## Documentation 
+
+Explore the [documentation](https://orion-giza.gitbook.io/scarb-agent) to learn how to get started with Scarb Agent.
+
 ## Starting a New Project
 
 Initialize a new project using:
 
 ```bash
 scarb agent-new [PROJECT_NAME]
-```
-
-After creation, run the following commands:
-
-```bash
-scarb agent-generate
-scarb build
 ```
 
 ## Usage
