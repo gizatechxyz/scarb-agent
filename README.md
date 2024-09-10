@@ -4,7 +4,7 @@ Scarb Agent simplifies the creation of Cairo programs that interact seamlessly w
 
 Scarb Agent is all you need to build provable agents ready for deployment on the [Giza](https://www.gizatech.xyz/) platform.
 
-## ✨ Key Features:
+## Key Features:
 
 - **Provable Cairo Programs**: Easily develop Cairo programs to prove the critical logic of your agent.
 - **Custom Oracles**: Design and deploy both constrained and unconstrained oracles that operate concurrently with your Cairo programs.
