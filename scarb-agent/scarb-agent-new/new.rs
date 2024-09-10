@@ -140,7 +140,7 @@ fn mk(
     let readme_path = canonical_path.join("README.md");
     fsx::write(&readme_path, readme_content)?;
 
-    // Generste the run-service.yaml
+    // Generate the run-service.yaml
     let filename = canonical_path.join(RUN_SERVICE_PATH.as_path());
     if !filename.exists() {
         fsx::create_dir_all(filename.parent().unwrap())?;
