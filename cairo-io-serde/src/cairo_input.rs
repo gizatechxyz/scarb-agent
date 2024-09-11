@@ -1,10 +1,11 @@
 use cainome_cairo_serde::ByteArray;
-use cairo_oracle_hint_processor::{FuncArg, FuncArgs};
 use cairo_vm::Felt252;
 use serde_json::Value;
 use std::str::FromStr;
 
-use crate::schema::{Schema, SchemaType};
+use crate::{
+    schema::{Schema, SchemaType}, FuncArg, FuncArgs
+};
 
 pub fn process_json_args(json_str: &str, schema: &Schema) -> Result<FuncArgs, String> {
     let json: Value =

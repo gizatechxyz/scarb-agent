@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use anyhow::{bail, Result};
+use cairo_io_serde::FuncArgs;
 use cairo_lang_compiler::db::RootDatabase;
 use cairo_lang_compiler::diagnostics::DiagnosticsReporter;
 use cairo_lang_compiler::project::setup_project;
@@ -14,7 +15,7 @@ use cairo_lang_test_plugin::{
     compile_test_prepared_db, test_plugin_suite, TestCompilation, TestCompilationMetadata,
     TestConfig, TestsCompilationConfig,
 };
-use cairo_oracle_hint_processor::{run_1, Error, FuncArgs};
+use cairo_oracle_hint_processor::{run_1, Error};
 use cairo_proto_serde::configuration::Configuration;
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::Felt252 as VMFelt;

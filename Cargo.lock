@@ -545,8 +545,11 @@ name = "cairo-io-serde"
 version = "0.1.1"
 dependencies = [
  "cainome-cairo-serde",
- "cairo-oracle-hint-processor",
+ "cairo-lang-sierra",
+ "cairo-lang-utils",
  "cairo-vm 1.0.0",
+ "itertools 0.12.1",
+ "num-traits 0.2.19",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -680,6 +683,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "cairo-felt",
+ "cairo-io-serde",
  "cairo-lang-compiler",
  "cairo-lang-filesystem",
  "cairo-lang-runner",
@@ -1135,7 +1139,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "cainome-cairo-serde",
+ "cairo-io-serde",
  "cairo-lang-casm",
  "cairo-lang-runner",
  "cairo-lang-sierra",

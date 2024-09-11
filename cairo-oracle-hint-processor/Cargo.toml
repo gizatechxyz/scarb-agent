@@ -17,6 +17,7 @@ cairo-lang-sierra-gas = { workspace = true }
 cairo-lang-runner = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-proto-serde = { workspace = true }
+cairo-io-serde = { workspace = true }
 cairo-vm = { workspace = true }
 camino = { workspace = true }
 clap = { workspace = true }
@@ -32,7 +33,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 starknet-types-core = { workspace = true }
 thiserror = { workspace = true }
-cainome-cairo-serde = { workspace = true }
 hex = "0.4.3"
 
 [features]

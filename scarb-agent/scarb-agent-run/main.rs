@@ -7,9 +7,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use cairo_io_serde::{cairo_input::process_json_args, schema::parse_schema_file};
+use cairo_io_serde::{cairo_input::process_json_args, schema::parse_schema_file, FuncArgs};
 use cairo_lang_sierra::program::VersionedProgram;
-use cairo_oracle_hint_processor::{run_1, Error, FuncArgs};
+use cairo_oracle_hint_processor::{run_1, Error};
 use cairo_proto_serde::configuration::{Configuration, ServerConfig};
 use cairo_vm::types::layout_name::LayoutName;
 use camino::Utf8PathBuf;
@@ -19,7 +19,6 @@ use scarb_metadata::{MetadataCommand, ScarbCommand};
 use scarb_ui::args::PackagesFilter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
-
 
 #[derive(Parser, Clone, Debug)]
 #[clap(author, version, about, long_about = None)]
