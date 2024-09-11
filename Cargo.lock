@@ -541,6 +541,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cairo-io-serde"
+version = "0.1.1"
+dependencies = [
+ "cainome-cairo-serde",
+ "cairo-oracle-hint-processor",
+ "cairo-vm 1.0.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+]
+
+[[package]]
 name = "cairo-lang-casm"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4863,6 +4876,7 @@ dependencies = [
  "bincode",
  "cainome-cairo-serde",
  "cairo-felt",
+ "cairo-io-serde",
  "cairo-lang-casm",
  "cairo-lang-compiler",
  "cairo-lang-filesystem",

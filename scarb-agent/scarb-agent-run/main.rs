@@ -7,20 +7,19 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use cairo_io_serde::{cairo_input::process_json_args, schema::parse_schema_file};
 use cairo_lang_sierra::program::VersionedProgram;
 use cairo_oracle_hint_processor::{run_1, Error, FuncArgs};
 use cairo_proto_serde::configuration::{Configuration, ServerConfig};
 use cairo_vm::types::layout_name::LayoutName;
 use camino::Utf8PathBuf;
 use clap::Parser;
-use scarb_agent_lib::serialization::{parse_input_schema, process_json_args};
 use scarb_agent_lib::utils::absolute_path;
 use scarb_metadata::{MetadataCommand, ScarbCommand};
 use scarb_ui::args::PackagesFilter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 
-mod deserialization;
 
 #[derive(Parser, Clone, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -206,16 +205,15 @@ fn run() -> Result<String> {
 }
 
 fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Result<FuncArgs> {
-    let inputs_schema = get_inputs_schema(package)?;
-    let schema = parse_input_schema(&inputs_schema)
+    let schema_file = get_inputs_schema(package)?;
+    let schema = parse_schema_file(&schema_file)
         .map_err(|e| anyhow::anyhow!("Failed to parse input schema: {}", e))?;
 
     if args.preprocess {
         let preprocess_url = env::var("PREPROCESS_URL")
             .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
 
-        let body: Value =
-            serde_json::from_str(&args.args.as_ref().context("Expect --args")?)?;
+        let body: Value = serde_json::from_str(&args.args.as_ref().context("Expect --args")?)?;
 
         let preprocess_result =
             call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;

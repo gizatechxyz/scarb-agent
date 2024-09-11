@@ -4,6 +4,7 @@ members = [
     "cairo-lang-hints-test-runner",
     "cairo-proto-serde",
     "cairo-proto-build",
+    "cairo-io-serde",
     "cairo-oracle-hint-processor",
     "scarb-agent",
 ]
@@ -32,12 +33,13 @@ cairo-lang-sierra-to-casm = "=2.7.0"
 cairo-lang-sierra-generator = "=2.7.0"
 cairo-lang-sierra-type-size = { version = "2.7.0", default-features = false }
 cairo-lang-starknet = "=2.7.0"
-cairo-lang-hints-test-runner = { path = "./cairo-lang-hints-test-runner", version = "0.1.0" }
+cairo-lang-hints-test-runner = { path = "./cairo-lang-hints-test-runner" }
 cairo-lang-test-plugin = "=2.7.0"
 cairo-lang-utils = "=2.7.0"
-cairo-oracle-hint-processor = { path = "./cairo-oracle-hint-processor", version = "0.1.0" }
-cairo-proto-build = { path = "./cairo-proto-build", default-features = false, version = "0.1.0" }
-cairo-proto-serde = { path = "./cairo-proto-serde", version = "0.1.0" }
+cairo-oracle-hint-processor = { path = "./cairo-oracle-hint-processor"}
+cairo-proto-build = { path = "./cairo-proto-build", default-features = false }
+cairo-proto-serde = { path = "./cairo-proto-serde" }
+cairo-io-serde = { path = "./cairo-io-serde" }
 cairo-felt = "0.9.1"
 cairo-vm = { git = "https://github.com/lambdaclass/cairo-vm", rev = "v1.0.0", features = [
     "std",

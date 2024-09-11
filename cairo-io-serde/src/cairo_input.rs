@@ -1,57 +1,44 @@
 use cainome_cairo_serde::ByteArray;
 use cairo_oracle_hint_processor::{FuncArg, FuncArgs};
 use cairo_vm::Felt252;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serde_yaml;
-use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum InputType {
-    Primitive { name: String },
-    Array { item_type: Box<InputType> },
-    Span { item_type: Box<InputType> },
-    Struct { name: String },
-}
+use crate::schema::{Schema, SchemaType};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SchemaDef {
-    fields: BTreeMap<String, InputType>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct InputSchema {
-    schemas: BTreeMap<String, SchemaDef>,
-    cairo_input: String,
-}
-
-pub fn parse_input_schema(path: &PathBuf) -> Result<InputSchema, String> {
-    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
-
-    serde_yaml::from_str(&contents).map_err(|e| format!("Failed to parse YAML: {}", e))
-}
-
-pub fn process_json_args(json_str: &str, schema: &InputSchema) -> Result<FuncArgs, String> {
+pub fn process_json_args(json_str: &str, schema: &Schema) -> Result<FuncArgs, String> {
     let json: Value =
         serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
     parse_schema(&json, &schema.cairo_input, schema)
 }
 
-fn parse_value(
-    value: &Value,
-    ty: &InputType,
-    schema: &InputSchema,
-) -> Result<Vec<FuncArg>, String> {
+fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<FuncArgs, String> {
+    let obj = value
+        .as_object()
+        .ok_or_else(|| format!("Expected object for schema {}", schema_name))?;
+
+    let schema_def = schema
+        .schemas
+        .get(schema_name)
+        .ok_or_else(|| format!("Schema {} not found in schema", schema_name))?;
+
+    let mut args = Vec::new();
+
+    for (field_name, field_type) in &schema_def.fields {
+        let value = obj
+            .get(field_name)
+            .ok_or_else(|| format!("Missing field: {} in schema {}", field_name, schema_name))?;
+
+        let parsed = parse_value(value, field_type, schema)?;
+        args.extend(parsed);
+    }
+
+    Ok(FuncArgs(args))
+}
+
+fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<FuncArg>, String> {
     match ty {
-        InputType::Primitive { name } => match name.as_str() {
+        SchemaType::Primitive { name } => match name.as_str() {
             "u64" | "u32" | "u16" | "u8" => {
                 let num = value
                     .as_u64()
@@ -94,7 +81,7 @@ fn parse_value(
             }
             _ => Err(format!("Unknown primitive type: {}", name)),
         },
-        InputType::Array { item_type } | InputType::Span { item_type } => {
+        SchemaType::Array { item_type } | SchemaType::Span { item_type } => {
             let array = value
                 .as_array()
                 .ok_or_else(|| "Expected array".to_string())?;
@@ -113,38 +100,10 @@ fn parse_value(
                     .collect(),
             )])
         }
-        InputType::Struct { name } => {
+        SchemaType::Struct { name } => {
             parse_schema(value, name, schema).map(|func_args| func_args.0)
         }
     }
-}
-
-fn parse_schema(
-    value: &Value,
-    schema_name: &str,
-    schema: &InputSchema,
-) -> Result<FuncArgs, String> {
-    let obj = value
-        .as_object()
-        .ok_or_else(|| format!("Expected object for schema {}", schema_name))?;
-
-    let schema_def = schema
-        .schemas
-        .get(schema_name)
-        .ok_or_else(|| format!("Schema {} not found in schema", schema_name))?;
-
-    let mut args = Vec::new();
-
-    for (field_name, field_type) in &schema_def.fields {
-        let value = obj
-            .get(field_name)
-            .ok_or_else(|| format!("Missing field: {} in schema {}", field_name, schema_name))?;
-
-        let parsed = parse_value(value, field_type, schema)?;
-        args.extend(parsed);
-    }
-
-    Ok(FuncArgs(args))
 }
 
 fn parse_byte_array(string: &str) -> Result<Vec<FuncArg>, String> {
@@ -164,6 +123,8 @@ fn parse_byte_array(string: &str) -> Result<Vec<FuncArg>, String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::schema::parse_schema_file;
+
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -237,10 +198,11 @@ mod tests {
                 type: Primitive
                 name: i64
         cairo_input: Input
+        cairo_output: None
         "#;
 
         let schema_file = create_temp_file_with_content(input_schema);
-        let input_schema = parse_input_schema(&schema_file.path().to_path_buf()).unwrap();
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
 
         // Create JSON input
         let json = r#"
