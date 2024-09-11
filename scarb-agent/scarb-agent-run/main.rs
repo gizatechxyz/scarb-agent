@@ -228,8 +228,8 @@ fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Resu
 }
 
 fn get_inputs_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBuf> {
-    absolute_path(package, None, "inputs_schema", Some(PathBuf::from("InputsSchema.txt")))
-        .context("Inputs schema path must be provided either in the Scarb.toml file in the [tool.agent] section or default to InputsSchema.txt in the project root.")
+    absolute_path(package, None, "cairo_schema", Some(PathBuf::from("cairo_schema.yaml")))
+        .context("Cairo schema path must be provided either in the Scarb.toml file in the [tool.agent] section or default to cairo_schema.yaml in the project root.")
 }
 
 fn process_result(result: Result<Option<String>, Error>, postprocess: bool) -> Result<String> {
