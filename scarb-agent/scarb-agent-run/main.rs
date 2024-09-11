@@ -13,7 +13,7 @@ use cairo_proto_serde::configuration::{Configuration, ServerConfig};
 use cairo_vm::types::layout_name::LayoutName;
 use camino::Utf8PathBuf;
 use clap::Parser;
-use scarb_agent_lib::serialization::{parse_input_schema, process_args, process_json_args};
+use scarb_agent_lib::serialization::{parse_input_schema, process_json_args};
 use scarb_agent_lib::utils::absolute_path;
 use scarb_metadata::{MetadataCommand, ScarbCommand};
 use scarb_ui::args::PackagesFilter;
@@ -64,11 +64,8 @@ struct Args {
     #[clap(long)]
     memory_file: Option<PathBuf>,
 
-    #[clap(long = "args", default_value = "", value_parser = process_args)]
-    args: Option<FuncArgs>,
-
-    #[clap(long = "args-json", default_value = "")]
-    args_json: Option<String>,
+    #[clap(long = "args", default_value = "")]
+    args: Option<String>,
 
     #[clap(long, default_value_t = false)]
     preprocess: bool,
@@ -218,15 +215,13 @@ fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Resu
             .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
 
         let body: Value =
-            serde_json::from_str(&args.args_json.as_ref().context("Expect --args_json")?)?;
+            serde_json::from_str(&args.args.as_ref().context("Expect --args")?)?;
 
         let preprocess_result =
             call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;
         process_json_args(&preprocess_result, &schema).map_err(|e| anyhow::anyhow!(e))
-    } else if let Some(json_args) = &args.args_json {
+    } else if let Some(json_args) = &args.args {
         process_json_args(json_args, &schema).map_err(|e| anyhow::anyhow!(e))
-    } else if let Some(args) = &args.args {
-        Ok(args.clone())
     } else {
         Ok(FuncArgs::default())
     }
