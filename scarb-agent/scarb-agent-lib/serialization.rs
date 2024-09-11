@@ -1,113 +1,48 @@
 use cainome_cairo_serde::ByteArray;
 use cairo_oracle_hint_processor::{FuncArg, FuncArgs};
 use cairo_vm::Felt252;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_yaml;
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 enum InputType {
-    U64,
-    I64,
-    U32,
-    I32,
-    U16,
-    I16,
-    U8,
-    I8,
-    F64,
-    Felt252,
-    ByteArray,
-    Bool,
-    Struct(String),
-    Array(Box<InputType>),
-    Span(Box<InputType>),
+    Primitive { name: String },
+    Array { item_type: Box<InputType> },
+    Span { item_type: Box<InputType> },
+    Struct { name: String },
 }
 
-#[derive(Debug, Clone)]
-struct StructDef {
-    fields: Vec<(String, InputType)>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SchemaDef {
+    fields: BTreeMap<String, InputType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InputSchema {
-    structs: BTreeMap<String, StructDef>,
-    main_struct: String,
+    schemas: BTreeMap<String, SchemaDef>,
+    cairo_input: String,
 }
 
-pub fn parse_input_schema(file_path: &PathBuf) -> Result<InputSchema, String> {
-    let file = File::open(file_path).map_err(|e| format!("Failed to open file: {}", e))?;
-    let reader = BufReader::new(file);
-    let mut input_schema = InputSchema {
-        structs: BTreeMap::new(),
-        main_struct: String::new(),
-    };
-    let mut current_struct: Option<(String, StructDef)> = None;
+pub fn parse_input_schema(path: &PathBuf) -> Result<InputSchema, String> {
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    for line in reader.lines() {
-        let line = line.map_err(|e| format!("Failed to read line: {}", e))?;
-        let line = line.trim();
-
-        if line.is_empty() || line.starts_with("//") {
-            continue;
-        }
-
-        if line.ends_with("{") {
-            let struct_name = line.trim_end_matches("{").trim().to_string();
-            current_struct = Some((struct_name.clone(), StructDef { fields: Vec::new() }));
-            if input_schema.main_struct.is_empty() {
-                input_schema.main_struct = struct_name;
-            }
-        } else if line == "}" {
-            if let Some((name, struct_def)) = current_struct.take() {
-                input_schema.structs.insert(name, struct_def);
-            }
-        } else if let Some((_, struct_def)) = &mut current_struct {
-            let parts: Vec<&str> = line.split(':').map(|s| s.trim()).collect();
-            if parts.len() == 2 {
-                let field_name = parts[0].to_string();
-                let field_type = parse_type(parts[1])?;
-                struct_def.fields.push((field_name, field_type));
-            }
-        }
-    }
-
-    Ok(input_schema)
+    serde_yaml::from_str(&contents).map_err(|e| format!("Failed to parse YAML: {}", e))
 }
 
 pub fn process_json_args(json_str: &str, schema: &InputSchema) -> Result<FuncArgs, String> {
     let json: Value =
         serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
-    parse_struct(&json, &schema.main_struct, schema)
-}
-
-fn parse_type(type_str: &str) -> Result<InputType, String> {
-    match type_str {
-        "u64" => Ok(InputType::U64),
-        "i64" => Ok(InputType::I64),
-        "u32" => Ok(InputType::U32),
-        "i32" => Ok(InputType::I32),
-        "u16" => Ok(InputType::U16),
-        "i16" => Ok(InputType::I16),
-        "u8" => Ok(InputType::U8),
-        "i8" => Ok(InputType::I8),
-        "F64" => Ok(InputType::F64),
-        "felt252" => Ok(InputType::Felt252),
-        "ByteArray" => Ok(InputType::ByteArray),
-        "bool" => Ok(InputType::Bool),
-        s if s.starts_with("Array<") => {
-            let inner_type = s.trim_start_matches("Array<").trim_end_matches('>');
-            Ok(InputType::Array(Box::new(parse_type(inner_type)?)))
-        }
-        s if s.starts_with("Span<") => {
-            let inner_type = s.trim_start_matches("Span<").trim_end_matches('>');
-            Ok(InputType::Span(Box::new(parse_type(inner_type)?)))
-        }
-        s => Ok(InputType::Struct(s.to_string())),
-    }
+    parse_schema(&json, &schema.cairo_input, schema)
 }
 
 fn parse_value(
@@ -116,76 +51,56 @@ fn parse_value(
     schema: &InputSchema,
 ) -> Result<Vec<FuncArg>, String> {
     match ty {
-        InputType::U64 | InputType::U32 | InputType::U16 | InputType::U8 => {
-            let num = value
-                .as_u64()
-                .ok_or_else(|| format!("Expected unsigned integer for {:?}", ty))?;
-            Ok(vec![FuncArg::Single(Felt252::from(num))])
-        }
-        InputType::I64 | InputType::I32 | InputType::I16 | InputType::I8 => {
-            let num = value
-                .as_i64()
-                .ok_or_else(|| format!("Expected signed integer for {:?}", ty))?;
-            Ok(vec![FuncArg::Single(Felt252::from(num))])
-        }
-
-        InputType::F64 => {
-            let num = value
-                .as_f64()
-                .ok_or_else(|| format!("Expected signed integer for {:?}", ty))?;
-
-            Ok(vec![FuncArg::Single(Felt252::from(
-                (num * 2.0_f64.powi(32)) as i64,
-            ))])
-        }
-
-        InputType::Felt252 => {
-            let string = value
-                .as_str()
-                .ok_or_else(|| "Expected string for Felt252".to_string())?;
-            let processed_string = if !string.starts_with("0x")
-                && !string.chars().all(|c| c.is_digit(10) || c == '-')
-            {
-                // Convert to hexadecimal if it's not already hex or decimal
-                assert!(
-                    string.len() <= 31,
-                    "Input string must be 31 characters or less"
-                );
-                format!(
-                    "0x{}",
-                    string
-                        .as_bytes()
-                        .iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<String>()
-                )
-            } else {
-                string.to_string()
-            };
-
-            Ok(vec![FuncArg::Single(
-                Felt252::from_str(&processed_string).map_err(|e| e.to_string())?,
-            )])
-        }
-        InputType::ByteArray => {
-            let string = value
-                .as_str()
-                .ok_or_else(|| "Expected string for ByteArray".to_string())?;
-            parse_byte_array(string)
-        }
-        InputType::Bool => {
-            let bool_value = value
-                .as_bool()
-                .ok_or_else(|| "Expected boolean value".to_string())?;
-            Ok(vec![FuncArg::Single(Felt252::from(bool_value as u64))])
-        }
-        InputType::Array(inner_type) => {
+        InputType::Primitive { name } => match name.as_str() {
+            "u64" | "u32" | "u16" | "u8" => {
+                let num = value
+                    .as_u64()
+                    .ok_or_else(|| format!("Expected unsigned integer for {}", name))?;
+                Ok(vec![FuncArg::Single(Felt252::from(num))])
+            }
+            "i64" | "i32" | "i16" | "i8" => {
+                let num = value
+                    .as_i64()
+                    .ok_or_else(|| format!("Expected signed integer for {}", name))?;
+                Ok(vec![FuncArg::Single(Felt252::from(num))])
+            }
+            "F64" => {
+                let num = value
+                    .as_f64()
+                    .ok_or_else(|| format!("Expected float for {}", name))?;
+                Ok(vec![FuncArg::Single(Felt252::from(
+                    (num * 2.0_f64.powi(32)) as i64,
+                ))])
+            }
+            "felt252" => {
+                let string = value
+                    .as_str()
+                    .ok_or_else(|| "Expected string for Felt252".to_string())?;
+                Ok(vec![FuncArg::Single(
+                    Felt252::from_str(string).map_err(|e| e.to_string())?,
+                )])
+            }
+            "ByteArray" => {
+                let string = value
+                    .as_str()
+                    .ok_or_else(|| "Expected string for ByteArray".to_string())?;
+                parse_byte_array(string)
+            }
+            "bool" => {
+                let bool_value = value
+                    .as_bool()
+                    .ok_or_else(|| "Expected boolean value".to_string())?;
+                Ok(vec![FuncArg::Single(Felt252::from(bool_value as u64))])
+            }
+            _ => Err(format!("Unknown primitive type: {}", name)),
+        },
+        InputType::Array { item_type } | InputType::Span { item_type } => {
             let array = value
                 .as_array()
                 .ok_or_else(|| "Expected array".to_string())?;
             let mut result = Vec::new();
             for item in array {
-                let parsed = parse_value(item, inner_type, schema)?;
+                let parsed = parse_value(item, item_type, schema)?;
                 result.extend(parsed);
             }
             Ok(vec![FuncArg::Array(
@@ -198,52 +113,32 @@ fn parse_value(
                     .collect(),
             )])
         }
-        InputType::Span(inner_type) => {
-            let array = value
-                .as_array()
-                .ok_or_else(|| "Expected array".to_string())?;
-            let mut result = Vec::new();
-            for item in array {
-                let parsed = parse_value(item, inner_type, schema)?;
-                result.extend(parsed);
-            }
-            Ok(vec![FuncArg::Array(
-                result
-                    .into_iter()
-                    .flat_map(|arg| match arg {
-                        FuncArg::Single(felt) => vec![felt],
-                        FuncArg::Array(arr) => arr,
-                    })
-                    .collect(),
-            )])
-        }
-
-        InputType::Struct(struct_name) => {
-            parse_struct(value, struct_name, schema).map(|func_args| func_args.0)
+        InputType::Struct { name } => {
+            parse_schema(value, name, schema).map(|func_args| func_args.0)
         }
     }
 }
 
-fn parse_struct(
+fn parse_schema(
     value: &Value,
-    struct_name: &str,
+    schema_name: &str,
     schema: &InputSchema,
 ) -> Result<FuncArgs, String> {
     let obj = value
         .as_object()
-        .ok_or_else(|| format!("Expected object for struct {}", struct_name))?;
+        .ok_or_else(|| format!("Expected object for schema {}", schema_name))?;
 
-    let struct_def = schema
-        .structs
-        .get(struct_name)
-        .ok_or_else(|| format!("Struct {} not found in schema", struct_name))?;
+    let schema_def = schema
+        .schemas
+        .get(schema_name)
+        .ok_or_else(|| format!("Schema {} not found in schema", schema_name))?;
 
     let mut args = Vec::new();
 
-    for (field_name, field_type) in &struct_def.fields {
+    for (field_name, field_type) in &schema_def.fields {
         let value = obj
             .get(field_name)
-            .ok_or_else(|| format!("Missing field: {} in struct {}", field_name, struct_name))?;
+            .ok_or_else(|| format!("Missing field: {} in schema {}", field_name, schema_name))?;
 
         let parsed = parse_value(value, field_type, schema)?;
         args.extend(parsed);
@@ -283,29 +178,65 @@ mod tests {
     fn test_parse_input_schema_and_process_json_args() {
         // Create a temporary input schema file
         let input_schema = r#"
-        Input {
-            a: u32
-            b: felt252
-            c: Array<i32>
-            d: Span<NestedStruct>
-            e: ByteArray
-            f: AnotherNestedStruct
-            g: bool
-            h: F64
-            i: Span<F64>
-        }
-
-        NestedStruct {
-            a: u32
-            b: i32
-            c: felt252
-            d: ByteArray
-        }
-
-        AnotherNestedStruct {
-            a: u32
-            b: i64
-        }
+        schemas:
+          Input:
+            fields:
+              a:
+                type: Primitive
+                name: u32
+              b:
+                type: Primitive
+                name: felt252
+              c:
+                type: Array
+                item_type:
+                  type: Primitive
+                  name: i32
+              d:
+                type: Span
+                item_type:
+                  type: Struct
+                  name: NestedSchema
+              e:
+                type: Primitive
+                name: ByteArray
+              f:
+                type: Struct
+                name: AnotherNestedSchema
+              g:
+                type: Primitive
+                name: bool
+              h:
+                type: Primitive
+                name: F64
+              i:
+                type: Span
+                item_type:
+                  type: Primitive
+                  name: F64
+          NestedSchema:
+            fields:
+              a:
+                type: Primitive
+                name: u32
+              b:
+                type: Primitive
+                name: i32
+              c:
+                type: Primitive
+                name: felt252
+              d:
+                type: Primitive
+                name: ByteArray
+          AnotherNestedSchema:
+            fields:
+              a:
+                type: Primitive
+                name: u32
+              b:
+                type: Primitive
+                name: i64
+        cairo_input: Input
         "#;
 
         let schema_file = create_temp_file_with_content(input_schema);
