@@ -50,7 +50,7 @@ scarb agent-new [PROJECT_NAME]
 
 2. In the root of your project, run the agent:
    ```
-   scarb agent-run --args-json [ARGS_CAIRO_FUNCTION]
+   scarb agent-run --args [ARGS_CAIRO_FUNCTION]
    ```
 
 ## Preprocessing
@@ -60,7 +60,7 @@ To run preprocessing:
 1. Ensure the Python server is running.
 2. Use the `--preprocess` flag when running the Scarb agent:
    ```
-   scarb agent-run --preprocess --args-json '{"n": 9}'
+   scarb agent-run --preprocess --args '{"n": 9}'
    ```
 
 ## Postprocessing
@@ -70,7 +70,7 @@ To run postprocessing:
 1. Ensure the Python server is running.
 2. Use the `--postprocess` flag when running the Scarb agent:
    ```
-   scarb agent-run --postprocess --args-json '{"n": 9}'
+   scarb agent-run --postprocess --args '{"n": 9}'
    ```
 
 ## Acknowledgments
