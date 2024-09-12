@@ -21,7 +21,7 @@ Scarb Agent allows you to build provable programs that interacts with custom ora
 
 2. Run the Scarb agent:
    ```
-   scarb agent-run --args-json '{"n": 9}'
+   scarb agent-run --args '{"n": 9}'
    ```
 
 {{#if preprocess}}
@@ -31,7 +31,7 @@ To run preprocessing:
 1. Ensure the Python server is running.
 2. Use the `--preprocess` flag when running the Scarb agent:
    ```
-   scarb agent-run --preprocess --args-json '{"n": 9}'
+   scarb agent-run --preprocess --args '{"n": 9}'
    ```
 {{/if}}
 
@@ -42,7 +42,7 @@ To run postprocessing:
 1. Ensure the Python server is running.
 2. Use the `--postprocess` flag when running the Scarb agent:
    ```
-   scarb agent-run --postprocess --args-json '{"n": 9}'
+   scarb agent-run --postprocess --args '{"n": 9}'
    ```
 {{/if}}
 
