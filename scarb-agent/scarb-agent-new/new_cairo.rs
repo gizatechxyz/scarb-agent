@@ -311,7 +311,13 @@ schemas:
             n: 
                 type: Primitive
                 name: i64
+    Output:
+        fields:
+            n:
+                type: Primitive
+                name: i64
 cairo_input: Input
+cairo_output: Output
     "#,
     )
 }
