@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use anyhow::{bail, Result};
+use cairo_io_serde::schema::Schema;
 use cairo_io_serde::FuncArgs;
 use cairo_lang_compiler::db::RootDatabase;
 use cairo_lang_compiler::diagnostics::DiagnosticsReporter;
@@ -324,6 +325,7 @@ pub fn run_tests(
                     &None,
                     &None,
                     &FuncArgs::default(),
+                    &Schema::default(),
                     &sierra_program,
                     &name,
                     false,

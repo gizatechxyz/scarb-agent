@@ -15,12 +15,15 @@ use num_traits::{cast::ToPrimitive, Zero};
 use serde_json::Value as JsonValue;
 use std::iter::Peekable;
 
+use crate::schema::{Schema, SchemaType};
+
 pub fn serialize_output(
     return_values: &[MaybeRelocatable],
     vm: &mut VirtualMachine,
     return_type_id: Option<&ConcreteTypeId>,
     sierra_program_registry: &ProgramRegistry<CoreType, CoreLibfunc>,
     type_sizes: &UnorderedHashMap<ConcreteTypeId, i16>,
+    schema: &Schema,
 ) -> String {
     let return_type_id = if let Some(id) = return_type_id {
         id
@@ -34,6 +37,8 @@ pub fn serialize_output(
         return_type_id,
         sierra_program_registry,
         type_sizes,
+        schema,  
+        &schema.cairo_output,
     );
 
     serde_json::to_string(&json_value).unwrap_or_else(|_| "null".to_string())
@@ -45,6 +50,8 @@ fn serialize_output_inner<'a>(
     return_type_id: &ConcreteTypeId,
     sierra_program_registry: &ProgramRegistry<CoreType, CoreLibfunc>,
     type_sizes: &UnorderedHashMap<ConcreteTypeId, i16>,
+    schema: &Schema,
+    current_schema_name: &str,
 ) -> JsonValue {
     match sierra_program_registry.get_type(return_type_id).unwrap() {
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Array(info) => {
@@ -72,6 +79,8 @@ fn serialize_output_inner<'a>(
                     array_elem_id,
                     sierra_program_registry,
                     type_sizes,
+                    schema,
+                    current_schema_name
                 ));
             }
             JsonValue::Array(json_array)
@@ -96,6 +105,8 @@ fn serialize_output_inner<'a>(
                 &info.ty,
                 sierra_program_registry,
                 type_sizes,
+                schema,
+                current_schema_name
             )
         }
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Const(_) => {
@@ -151,6 +162,9 @@ fn serialize_output_inner<'a>(
                 &info.ty,
                 sierra_program_registry,
                 type_sizes,
+                schema,
+                current_schema_name
+
             )
         }
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Nullable(info) => {
@@ -170,6 +184,9 @@ fn serialize_output_inner<'a>(
                         &info.ty,
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        current_schema_name
+    
                     )
                 }
                 MaybeRelocatable::Int(felt) if felt.is_zero() => JsonValue::Null,
@@ -191,6 +208,9 @@ fn serialize_output_inner<'a>(
                         &info.variants[0],
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        current_schema_name
+    
                     );
                 }
             }
@@ -255,6 +275,9 @@ fn serialize_output_inner<'a>(
                 variant_type_id,
                 sierra_program_registry,
                 type_sizes,
+                schema,
+                current_schema_name
+
             )
         }
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Struct(info) => {
@@ -269,6 +292,9 @@ fn serialize_output_inner<'a>(
                             array_type_id,
                             sierra_program_registry,
                             type_sizes,
+                            schema,
+                            current_schema_name
+        
                         );
                     }
                 }
@@ -284,6 +310,9 @@ fn serialize_output_inner<'a>(
                         &info.members[0],
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        current_schema_name
+    
                     );
 
                     let fl = if let JsonValue::Number(scaled) = data {
@@ -307,6 +336,9 @@ fn serialize_output_inner<'a>(
                         &info.members[0],
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        current_schema_name
+    
                     );
                     let pending_word = serialize_output_inner(
                         return_values_iter,
@@ -314,6 +346,9 @@ fn serialize_output_inner<'a>(
                         &info.members[1],
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        current_schema_name
+    
                     );
                     let pending_word_len = serialize_output_inner(
                         return_values_iter,
@@ -321,6 +356,9 @@ fn serialize_output_inner<'a>(
                         &info.members[2],
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        current_schema_name
+    
                     );
 
                     // Reconstruct ByteArray
@@ -343,17 +381,28 @@ fn serialize_output_inner<'a>(
                     };
                 }
             }
-            // If it's not a Span, proceed with normal struct serialization
+            // If it's not a Span or F64, proceed with normal struct serialization
             let mut json_object = serde_json::Map::new();
-            for (index, member_type_id) in info.members.iter().enumerate() {
+            
+            let schema_def = schema.schemas.get(current_schema_name)
+                .expect(&format!("Schema {} not found", current_schema_name));
+            
+            for (index, (field_name, field_type)) in schema_def.fields.iter().enumerate() {
+                let member_type_id = &info.members[index];
+                
                 json_object.insert(
-                    index.to_string(),
+                    field_name.clone(),
                     serialize_output_inner(
                         return_values_iter,
                         vm,
                         member_type_id,
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        match field_type {
+                            SchemaType::Struct { name } => name,
+                            _ => current_schema_name,
+                        },
                     ),
                 );
             }
@@ -419,6 +468,9 @@ fn serialize_output_inner<'a>(
                         value_type_id,
                         sierra_program_registry,
                         type_sizes,
+                        schema,
+                        current_schema_name
+    
                     ),
                 );
             }
@@ -431,6 +483,8 @@ fn serialize_output_inner<'a>(
                 &info.ty,
                 sierra_program_registry,
                 type_sizes,
+                schema,
+                current_schema_name
             )
         }
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::GasBuiltin(_info) => {

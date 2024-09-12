@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use bincode::enc::write::Writer;
+use cairo_io_serde::schema::Schema;
 use cairo_io_serde::FuncArgs;
 use cairo_lang_sierra::ids::ConcreteTypeId;
 use cairo_lang_sierra::program::Program as SierraProgram;
@@ -127,6 +128,7 @@ pub fn run_1(
     air_public_input: &Option<PathBuf>,
     air_private_input: &Option<PathBuf>,
     args: &FuncArgs,
+    schema: &Schema,
     sierra_program: &SierraProgram,
     entry_func_name: &str,
     proof_mode: bool,
@@ -147,6 +149,7 @@ pub fn run_1(
         cairo_run_config,
         configuration,
         entry_func_name,
+        schema
     )?;
 
     if let Some(file_path) = air_public_input {

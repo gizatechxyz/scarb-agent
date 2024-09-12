@@ -1,4 +1,4 @@
-use cairo_io_serde::{cairo_output::serialize_output, FuncArg};
+use cairo_io_serde::{cairo_output::serialize_output, schema::Schema, FuncArg};
 use cairo_lang_casm::{
     builder::{CasmBuilder, Var},
     casm, casm_build_extend,
@@ -107,6 +107,7 @@ pub fn cairo_run_program(
     cairo_run_config: Cairo1RunConfig,
     configuration: &Configuration,
     entry_func_name: &str,
+    schema: &Schema
 ) -> Result<(CairoRunner, Vec<MaybeRelocatable>, Option<String>), Error> {
     let metadata = calc_metadata_ap_change_only(sierra_program)
         .map_err(|_| VirtualMachineError::Unexpected)?;
@@ -275,6 +276,7 @@ pub fn cairo_run_program(
                 return_type_id,
                 &sierra_program_registry,
                 &type_sizes,
+                schema
             ))
         }
     } else {

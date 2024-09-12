@@ -7,7 +7,11 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use cairo_io_serde::{cairo_input::process_json_args, schema::parse_schema_file, FuncArgs};
+use cairo_io_serde::{
+    cairo_input::process_json_args,
+    schema::{parse_schema_file, Schema},
+    FuncArgs,
+};
 use cairo_lang_sierra::program::VersionedProgram;
 use cairo_oracle_hint_processor::{run_1, Error};
 use cairo_proto_serde::configuration::{Configuration, ServerConfig};
@@ -184,7 +188,11 @@ fn run() -> Result<String> {
         .context("Failed to load Sierra program")?
         .program;
 
-    let func_args = get_func_args(&args, &package)?;
+    let schema_file = get_inputs_schema(&package)?;
+    let schema = parse_schema_file(&schema_file)
+        .map_err(|e| anyhow::anyhow!("Failed to parse input schema: {}", e))?;
+
+    let func_args = get_func_args(&args, &schema)?;
 
     let result = run_1(
         &service_configuration,
@@ -195,6 +203,7 @@ fn run() -> Result<String> {
         &args.air_public_input,
         &args.air_private_input,
         &func_args,
+        &schema,
         &sierra_program,
         "::main",
         args.proof_mode,
@@ -203,11 +212,7 @@ fn run() -> Result<String> {
     process_result(result, args.postprocess)
 }
 
-fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Result<FuncArgs> {
-    let schema_file = get_inputs_schema(package)?;
-    let schema = parse_schema_file(&schema_file)
-        .map_err(|e| anyhow::anyhow!("Failed to parse input schema: {}", e))?;
-
+fn get_func_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {
     if args.preprocess {
         let preprocess_url = env::var("PREPROCESS_URL")
             .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
@@ -216,9 +221,9 @@ fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Resu
 
         let preprocess_result =
             call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;
-        process_json_args(&preprocess_result, &schema).map_err(|e| anyhow::anyhow!(e))
+        process_json_args(&preprocess_result, schema).map_err(|e| anyhow::anyhow!(e))
     } else if let Some(json_args) = &args.args {
-        process_json_args(json_args, &schema).map_err(|e| anyhow::anyhow!(e))
+        process_json_args(json_args, schema).map_err(|e| anyhow::anyhow!(e))
     } else {
         Ok(FuncArgs::default())
     }

@@ -14,7 +14,17 @@ pub(crate) enum SchemaType {
     Struct { name: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Default for Schema {
+    fn default() -> Self {
+        Schema {
+            schemas: BTreeMap::new(),
+            cairo_input: "None".to_string(),
+            cairo_output: "None".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct SchemaDef {
     pub(crate) fields: BTreeMap<String, SchemaType>,
 }
