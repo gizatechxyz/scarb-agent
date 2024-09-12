@@ -7,20 +7,22 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use cairo_io_serde::{
+    cairo_input::process_json_args,
+    schema::{parse_schema_file, Schema},
+    FuncArgs,
+};
 use cairo_lang_sierra::program::VersionedProgram;
-use cairo_oracle_hint_processor::{run_1, Error, FuncArgs};
+use cairo_oracle_hint_processor::{run_1, Error};
 use cairo_proto_serde::configuration::{Configuration, ServerConfig};
 use cairo_vm::types::layout_name::LayoutName;
 use camino::Utf8PathBuf;
 use clap::Parser;
-use scarb_agent_lib::serialization::{parse_input_schema, process_args, process_json_args};
 use scarb_agent_lib::utils::absolute_path;
 use scarb_metadata::{MetadataCommand, ScarbCommand};
 use scarb_ui::args::PackagesFilter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
-
-mod deserialization;
 
 #[derive(Parser, Clone, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -64,11 +66,8 @@ struct Args {
     #[clap(long)]
     memory_file: Option<PathBuf>,
 
-    #[clap(long = "args", default_value = "", value_parser = process_args)]
-    args: Option<FuncArgs>,
-
-    #[clap(long = "args-json", default_value = "")]
-    args_json: Option<String>,
+    #[clap(long = "args", default_value = "")]
+    args: Option<String>,
 
     #[clap(long, default_value_t = false)]
     preprocess: bool,
@@ -189,7 +188,11 @@ fn run() -> Result<String> {
         .context("Failed to load Sierra program")?
         .program;
 
-    let func_args = get_func_args(&args, &package)?;
+    let schema_file = get_cairo_schema(&package)?;
+    let schema = parse_schema_file(&schema_file)
+        .map_err(|e| anyhow::anyhow!("Failed to parse input schema: {}", e))?;
+
+    let func_args = get_func_args(&args, &schema)?;
 
     let result = run_1(
         &service_configuration,
@@ -200,6 +203,7 @@ fn run() -> Result<String> {
         &args.air_public_input,
         &args.air_private_input,
         &func_args,
+        &schema,
         &sierra_program,
         "::main",
         args.proof_mode,
@@ -208,33 +212,36 @@ fn run() -> Result<String> {
     process_result(result, args.postprocess)
 }
 
-fn get_func_args(args: &Args, package: &scarb_metadata::PackageMetadata) -> Result<FuncArgs> {
-    let inputs_schema = get_inputs_schema(package)?;
-    let schema = parse_input_schema(&inputs_schema)
-        .map_err(|e| anyhow::anyhow!("Failed to parse input schema: {}", e))?;
-
+fn get_func_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {
     if args.preprocess {
-        let preprocess_url = env::var("PREPROCESS_URL")
-            .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
-
-        let body: Value =
-            serde_json::from_str(&args.args_json.as_ref().context("Expect --args_json")?)?;
-
-        let preprocess_result =
-            call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;
-        process_json_args(&preprocess_result, &schema).map_err(|e| anyhow::anyhow!(e))
-    } else if let Some(json_args) = &args.args_json {
-        process_json_args(json_args, &schema).map_err(|e| anyhow::anyhow!(e))
-    } else if let Some(args) = &args.args {
-        Ok(args.clone())
+        preprocess_args(args, schema)
     } else {
-        Ok(FuncArgs::default())
+        process_args(args, schema)
     }
 }
 
-fn get_inputs_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBuf> {
-    absolute_path(package, None, "inputs_schema", Some(PathBuf::from("InputsSchema.txt")))
-        .context("Inputs schema path must be provided either in the Scarb.toml file in the [tool.agent] section or default to InputsSchema.txt in the project root.")
+fn preprocess_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {
+    let preprocess_url = env::var("PREPROCESS_URL")
+        .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
+
+    let body: Value = serde_json::from_str(&args.args.as_ref().context("Expect --args")?)?;
+
+    let preprocess_result = call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;
+    process_json_args(&preprocess_result, schema).map_err(|e| anyhow::anyhow!(e))
+}
+
+fn process_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {
+    match &args.args {
+        Some(json_args) if !json_args.trim().is_empty() => {
+            process_json_args(json_args, schema).map_err(|e| anyhow::anyhow!(e))
+        }
+        _ => Ok(FuncArgs::default()),
+    }
+}
+
+fn get_cairo_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBuf> {
+    absolute_path(package, None, "cairo_schema", Some(PathBuf::from("cairo_schema.yaml")))
+        .context("Cairo schema path must be provided either in the Scarb.toml file in the [tool.agent] section or default to cairo_schema.yaml in the project root.")
 }
 
 fn process_result(result: Result<Option<String>, Error>, postprocess: bool) -> Result<String> {

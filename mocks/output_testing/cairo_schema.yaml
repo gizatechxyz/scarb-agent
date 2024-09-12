@@ -1,0 +1,60 @@
+schemas:
+  Output:
+    fields:
+      a:
+        type: Primitive
+        name: u32
+      b:
+        type: Primitive
+        name: felt252
+      c:
+        type: Span
+        item_type:
+          type: Primitive
+          name: i32
+      d:
+        type: Span
+        item_type:
+          type: Struct
+          name: Nested
+      e:
+        type: Primitive
+        name: ByteArray
+      f:
+        type: Struct
+        name: AnotherNested
+      g:
+        type: Primitive
+        name: bool
+      h:
+        type: Primitive
+        name: F64
+      i:
+        type: Span
+        item_type:
+          type: Primitive
+          name: F64
+  Nested:
+    fields:
+      a:
+        type: Primitive
+        name: u32
+      b:
+        type: Primitive
+        name: i32
+      c:
+        type: Primitive
+        name: felt252
+      d:
+        type: Primitive
+        name: ByteArray
+  AnotherNested:
+    fields:
+      a:
+        type: Primitive
+        name: u32
+      b:
+        type: Primitive
+        name: i64
+cairo_input: None
+cairo_output: Output

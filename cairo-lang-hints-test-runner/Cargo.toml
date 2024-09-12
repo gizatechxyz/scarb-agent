@@ -17,6 +17,7 @@ cairo-lang-test-plugin = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-oracle-hint-processor = { workspace = true }
 cairo-proto-serde = { workspace = true }
+cairo-io-serde = { workspace = true }
 cairo-vm = { workspace = true }
 cairo-felt = { workspace = true }
 colored = { workspace = true }

@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use bincode::enc::write::Writer;
+use cairo_io_serde::schema::Schema;
+use cairo_io_serde::FuncArgs;
 use cairo_lang_sierra::ids::ConcreteTypeId;
 use cairo_lang_sierra::program::Program as SierraProgram;
 use cairo_lang_sierra::program_registry::ProgramRegistryError;
@@ -84,16 +86,6 @@ pub enum Error {
     ServersConfigFileError(String),
 }
 
-#[allow(dead_code)]
-#[derive(Debug, PartialEq, Clone)]
-pub enum FuncArg {
-    Array(Vec<Felt252>),
-    Single(Felt252),
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct FuncArgs(pub Vec<FuncArg>);
-
 pub struct FileWriter {
     buf_writer: io::BufWriter<std::fs::File>,
     bytes_written: usize,
@@ -136,6 +128,7 @@ pub fn run_1(
     air_public_input: &Option<PathBuf>,
     air_private_input: &Option<PathBuf>,
     args: &FuncArgs,
+    schema: &Schema,
     sierra_program: &SierraProgram,
     entry_func_name: &str,
     proof_mode: bool,
@@ -156,6 +149,7 @@ pub fn run_1(
         cairo_run_config,
         configuration,
         entry_func_name,
+        schema
     )?;
 
     if let Some(file_path) = air_public_input {

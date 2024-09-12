@@ -1,0 +1,22 @@
+[package]
+name = "cairo-io-serde"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license-file.workspace = true
+description = "(De)serialization of Cairo inputs/outputs."
+
+
+[dependencies]
+cainome-cairo-serde = { git = "https://github.com/cartridge-gg/cainome.git", rev = "0d29bb0" }
+cairo-vm = { workspace = true }
+cairo-lang-sierra = { workspace = true }
+cairo-lang-utils = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9.34"
+num-traits = { workspace = true }
+itertools = { workspace = true }
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -97,13 +97,13 @@ pub(crate) fn mk_cairo(
         fsx::write(filename, servers_content)?;
     }
 
-    // Create the `InputsSchema.txt` file
-    let filename = canonical_path.join("InputsSchema.txt");
+    // Create the `cairo_schema.yaml` file
+    let filename = canonical_path.join("cairo_schema.yaml");
     if !filename.exists() {
         fsx::create_dir_all(filename.parent().unwrap())?;
 
-        let inputs_schema_content = generate_inputs_schema_content();
-        fsx::write(filename, inputs_schema_content)?;
+        let cairo_schema_content = generate_cairo_schema_content();
+        fsx::write(filename, cairo_schema_content)?;
     }
 
     // Create the `tool-versions` file.
@@ -302,12 +302,22 @@ fn generate_servers_json_content(project_config: &ProjectConfig) -> String {
     serde_json::to_string_pretty(&servers).unwrap()
 }
 
-fn generate_inputs_schema_content() -> String {
+fn generate_cairo_schema_content() -> String {
     String::from(
         r#"
-Input {
-    n: i64
-}
+schemas:
+    Input:
+        fields:
+            n: 
+                type: Primitive
+                name: i64
+    Output:
+        fields:
+            n:
+                type: Primitive
+                name: i64
+cairo_input: Input
+cairo_output: Output
     "#,
     )
 }

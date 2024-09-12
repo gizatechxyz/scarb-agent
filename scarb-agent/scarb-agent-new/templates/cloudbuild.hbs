@@ -30,7 +30,7 @@ steps:
     script: |
       servers_file=$(find . -path "./registry" -prune -o -name "servers.json" -print)
       oracle_file=$(find . -path "./registry" -prune -o -name "Oracle.lock" -print)
-      schema_file=$(find . -path "./registry" -prune -o -name "InputsSchema.txt" -print)
+      schema_file=$(find . -path "./registry" -prune -o -name "cairo_schema.yaml" -print)
       sierra_file=$(find . -path "./registry" -prune -o -name "*.sierra.json" -print)
       if [ -z "$servers_file" ] || [ -z "$oracle_file" ] || [ -z "$schema_file" ] || [ -z "$sierra_file" ]; then
         echo "Missing required files"
@@ -40,7 +40,7 @@ steps:
       echo $registry_path > registry_path.txt
       gcloud storage cp $servers_file $registry_path/servers.json
       gcloud storage cp $oracle_file $registry_path/Oracle.lock
-      gcloud storage cp $schema_file $registry_path/InputsSchema.txt
+      gcloud storage cp $schema_file $registry_path/cairo_schema.yaml
       gcloud storage cp $sierra_file $registry_path/programs/$(basename $sierra_file)
     id: UPLOAD_REGISTRY
     waitFor:

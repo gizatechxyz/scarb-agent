@@ -39,6 +39,7 @@ cairo-lang-sierra-type-size = { workspace = true }
 cairo-lang-utils = { workspace = true }
 cairo-oracle-hint-processor = { workspace = true }
 cairo-proto-serde = { workspace = true }
+cairo-io-serde = { workspace = true }
 cairo-felt = { workspace = true }
 cairo-vm = { workspace = true }
 camino = { workspace = true }
@@ -61,6 +62,7 @@ cainome-cairo-serde = { workspace = true }
 dialoguer = "0.10.4"
 gix = "0.66.0"
 colored.workspace = true
+serde_yaml = "0.9.34"
 
 [dev-dependencies]
 hex = "0.4.3"
