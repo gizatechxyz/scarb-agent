@@ -188,7 +188,7 @@ fn run() -> Result<String> {
         .context("Failed to load Sierra program")?
         .program;
 
-    let schema_file = get_inputs_schema(&package)?;
+    let schema_file = get_cairo_schema(&package)?;
     let schema = parse_schema_file(&schema_file)
         .map_err(|e| anyhow::anyhow!("Failed to parse input schema: {}", e))?;
 
@@ -214,22 +214,32 @@ fn run() -> Result<String> {
 
 fn get_func_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {
     if args.preprocess {
-        let preprocess_url = env::var("PREPROCESS_URL")
-            .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
-
-        let body: Value = serde_json::from_str(&args.args.as_ref().context("Expect --args")?)?;
-
-        let preprocess_result =
-            call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;
-        process_json_args(&preprocess_result, schema).map_err(|e| anyhow::anyhow!(e))
-    } else if let Some(json_args) = &args.args {
-        process_json_args(json_args, schema).map_err(|e| anyhow::anyhow!(e))
+        preprocess_args(args, schema)
     } else {
-        Ok(FuncArgs::default())
+        process_args(args, schema)
     }
 }
 
-fn get_inputs_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBuf> {
+fn preprocess_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {
+    let preprocess_url = env::var("PREPROCESS_URL")
+        .unwrap_or_else(|_| "http://localhost:3000/preprocess".to_string());
+
+    let body: Value = serde_json::from_str(&args.args.as_ref().context("Expect --args")?)?;
+
+    let preprocess_result = call_server::<PreprocessResponse>(&preprocess_url, Some(body))?.args;
+    process_json_args(&preprocess_result, schema).map_err(|e| anyhow::anyhow!(e))
+}
+
+fn process_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {
+    match &args.args {
+        Some(json_args) if !json_args.trim().is_empty() => {
+            process_json_args(json_args, schema).map_err(|e| anyhow::anyhow!(e))
+        }
+        _ => Ok(FuncArgs::default()),
+    }
+}
+
+fn get_cairo_schema(package: &scarb_metadata::PackageMetadata) -> Result<PathBuf> {
     absolute_path(package, None, "cairo_schema", Some(PathBuf::from("cairo_schema.yaml")))
         .context("Cairo schema path must be provided either in the Scarb.toml file in the [tool.agent] section or default to cairo_schema.yaml in the project root.")
 }

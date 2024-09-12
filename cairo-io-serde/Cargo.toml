@@ -9,7 +9,6 @@ description = "(De)serialization of Cairo inputs/outputs."
 
 [dependencies]
 cainome-cairo-serde = { git = "https://github.com/cartridge-gg/cainome.git", rev = "0d29bb0" }
-# cairo-oracle-hint-processor = { workspace = true }
 cairo-vm = { workspace = true }
 cairo-lang-sierra = { workspace = true }
 cairo-lang-utils = { workspace = true }

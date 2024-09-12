@@ -381,30 +381,33 @@ fn serialize_output_inner<'a>(
                     };
                 }
             }
-            // If it's not a Span or F64, proceed with normal struct serialization
+            
+            // If it's not a Span, F64, or ByteArray, proceed with normal struct serialization
             let mut json_object = serde_json::Map::new();
             
             let schema_def = schema.schemas.get(current_schema_name)
                 .expect(&format!("Schema {} not found", current_schema_name));
             
-            for (index, (field_name, field_type)) in schema_def.fields.iter().enumerate() {
-                let member_type_id = &info.members[index];
+            for (index, member_type_id) in info.members.iter().enumerate() {
+                let field_info = schema_def.fields.iter().nth(index);
                 
-                json_object.insert(
-                    field_name.clone(),
-                    serialize_output_inner(
-                        return_values_iter,
-                        vm,
-                        member_type_id,
-                        sierra_program_registry,
-                        type_sizes,
-                        schema,
-                        match field_type {
-                            SchemaType::Struct { name } => name,
-                            _ => current_schema_name,
-                        },
-                    ),
-                );
+                if let Some((field_name, field_type)) = field_info {
+                    json_object.insert(
+                        field_name.clone(),
+                        serialize_output_inner(
+                            return_values_iter,
+                            vm,
+                            member_type_id,
+                            sierra_program_registry,
+                            type_sizes,
+                            schema,
+                            match field_type {
+                                SchemaType::Struct { name } => name,
+                                _ => current_schema_name,
+                            },
+                        ),
+                    );
+                }
             }
             JsonValue::Object(json_object)
         },

@@ -4,20 +4,23 @@ use serde_json::Value;
 use std::str::FromStr;
 
 use crate::{
-    schema::{Schema, SchemaType}, FuncArg, FuncArgs
+    schema::{Schema, SchemaType},
+    FuncArg, FuncArgs,
 };
 
 pub fn process_json_args(json_str: &str, schema: &Schema) -> Result<FuncArgs, String> {
-    let json: Value =
-        serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+    if json.as_object().map_or(false, |obj| obj.is_empty()) {
+        // Return default (empty) FuncArgs if JSON is empty
+        return Ok(FuncArgs::default());
+    }
+
     parse_schema(&json, &schema.cairo_input, schema)
 }
 
 fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<FuncArgs, String> {
-    let obj = value
-        .as_object()
-        .ok_or_else(|| format!("Expected object for schema {}", schema_name))?;
-
     let schema_def = schema
         .schemas
         .get(schema_name)
@@ -26,7 +29,7 @@ fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<Fun
     let mut args = Vec::new();
 
     for (field_name, field_type) in &schema_def.fields {
-        let value = obj
+        let value = value
             .get(field_name)
             .ok_or_else(|| format!("Missing field: {} in schema {}", field_name, schema_name))?;
 
