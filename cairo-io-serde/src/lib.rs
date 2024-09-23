@@ -3,6 +3,7 @@ use cairo_vm::Felt252;
 pub mod cairo_input;
 pub mod cairo_output;
 pub mod schema;
+pub(crate) mod utils;
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq, Clone)]

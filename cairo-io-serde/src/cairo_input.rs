@@ -5,22 +5,26 @@ use std::str::FromStr;
 
 use crate::{
     schema::{Schema, SchemaType},
+    utils::is_valid_number,
     FuncArg, FuncArgs,
 };
 
 pub fn process_json_args(json_str: &str, schema: &Schema) -> Result<FuncArgs, String> {
-    let json: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let json: serde_json::Value =
+        serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     if json.as_object().map_or(false, |obj| obj.is_empty()) {
         // Return default (empty) FuncArgs if JSON is empty
         return Ok(FuncArgs::default());
     }
 
-    parse_schema(&json, &schema.cairo_input, schema)
+    let parsed = parse_schema(&json, &schema.cairo_input, schema)?;
+    println!("Parsed: {:?}", parsed);
+
+    Ok(FuncArgs(vec![FuncArg::Array(parsed)]))
 }
 
-fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<FuncArgs, String> {
+fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<Vec<Felt252>, String> {
     let schema_def = schema
         .schemas
         .get(schema_name)
@@ -37,39 +41,51 @@ fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<Fun
         args.extend(parsed);
     }
 
-    Ok(FuncArgs(args))
+    Ok(args)
 }
 
-fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<FuncArg>, String> {
+// Values are passing as follow in CairoVM.
+// Integers, Felt252: CairoVM is waiting for a Felt252
+// Boolean: CairoVM is waiting for a Felt252, containing 0 or 1
+// Array, Span: CairoVM is waiting for an array of Felt252 structured as follow: [array_len, val1, val2, ...]
+// Struct: CairoVM is waiting for a list of Felt252
+// F64: F64 is technically a struct in Orion. But for better DX, it's handled as a Primitive. CairoVM is waiting for a Felt252.
+// ByteArray: CairoVM is waiting for a specific struct.
+fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Felt252>, String> {
     match ty {
         SchemaType::Primitive { name } => match name.as_str() {
             "u64" | "u32" | "u16" | "u8" => {
                 let num = value
                     .as_u64()
                     .ok_or_else(|| format!("Expected unsigned integer for {}", name))?;
-                Ok(vec![FuncArg::Single(Felt252::from(num))])
+                Ok(vec![Felt252::from(num)])
             }
             "i64" | "i32" | "i16" | "i8" => {
                 let num = value
                     .as_i64()
                     .ok_or_else(|| format!("Expected signed integer for {}", name))?;
-                Ok(vec![FuncArg::Single(Felt252::from(num))])
+                Ok(vec![Felt252::from(num)])
             }
             "F64" => {
                 let num = value
                     .as_f64()
                     .ok_or_else(|| format!("Expected float for {}", name))?;
-                Ok(vec![FuncArg::Single(Felt252::from(
-                    (num * 2.0_f64.powi(32)) as i64,
-                ))])
+                Ok(vec![Felt252::from((num * 2.0_f64.powi(32)) as i64)])
             }
             "felt252" => {
                 let string = value
                     .as_str()
-                    .ok_or_else(|| "Expected string for Felt252".to_string())?;
-                Ok(vec![FuncArg::Single(
-                    Felt252::from_str(string).map_err(|e| e.to_string())?,
-                )])
+                    .ok_or_else(|| "Expected a string".to_string())?;
+
+                // Check if the string is a valid number
+                if is_valid_number(string) | string.starts_with("0x") {
+                    Ok(vec![Felt252::from_str(string).map_err(|e| e.to_string())?])
+                } else {
+                    Ok(vec![Felt252::from_str(
+                        &("0x".to_string() + &hex::encode(string)),
+                    )
+                    .map_err(|e| e.to_string())?])
+                }
             }
             "ByteArray" => {
                 let string = value
@@ -81,7 +97,7 @@ fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Fu
                 let bool_value = value
                     .as_bool()
                     .ok_or_else(|| "Expected boolean value".to_string())?;
-                Ok(vec![FuncArg::Single(Felt252::from(bool_value as u64))])
+                Ok(vec![Felt252::from(bool_value as u64)])
             }
             _ => Err(format!("Unknown primitive type: {}", name)),
         },
@@ -90,37 +106,27 @@ fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Fu
                 .as_array()
                 .ok_or_else(|| "Expected array".to_string())?;
             let mut result = Vec::new();
+            result.push(Felt252::from(array.len()));
             for item in array {
                 let parsed = parse_value(item, item_type, schema)?;
                 result.extend(parsed);
             }
-            Ok(vec![FuncArg::Array(
-                result
-                    .into_iter()
-                    .flat_map(|arg| match arg {
-                        FuncArg::Single(felt) => vec![felt],
-                        FuncArg::Array(arr) => arr,
-                    })
-                    .collect(),
-            )])
+            Ok(result)
         }
-        SchemaType::Struct { name } => {
-            parse_schema(value, name, schema).map(|func_args| func_args.0)
-        }
+        SchemaType::Struct { name } => parse_schema(value, name, schema).map(|func_args| func_args),
     }
 }
 
-fn parse_byte_array(string: &str) -> Result<Vec<FuncArg>, String> {
+fn parse_byte_array(string: &str) -> Result<Vec<Felt252>, String> {
     let byte_array =
         ByteArray::from_string(string).map_err(|e| format!("Error parsing ByteArray: {}", e))?;
 
     let mut result = Vec::new();
-    let data = byte_array.data.iter().map(|b| b.felt()).collect::<Vec<_>>();
-    result.push(FuncArg::Array(data));
-    result.push(FuncArg::Single(byte_array.pending_word));
-    result.push(FuncArg::Single(Felt252::from(
-        byte_array.pending_word_len as u64,
-    )));
+    let mut data = byte_array.data.iter().map(|b| b.felt()).collect::<Vec<_>>();
+    result.push(Felt252::from(data.len()));
+    result.append(&mut data);
+    result.push(byte_array.pending_word);
+    result.push(Felt252::from(byte_array.pending_word_len as u64));
 
     Ok(result)
 }

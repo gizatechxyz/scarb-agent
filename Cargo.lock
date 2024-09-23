@@ -548,6 +548,7 @@ dependencies = [
  "cairo-lang-sierra",
  "cairo-lang-utils",
  "cairo-vm 1.0.0",
+ "hex",
  "itertools 0.12.1",
  "num-traits 0.2.19",
  "serde",
