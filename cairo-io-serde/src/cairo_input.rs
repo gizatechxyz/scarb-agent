@@ -10,7 +10,7 @@ use crate::{
 };
 
 pub fn process_json_args(json_str: &str, schema: &Schema) -> Result<FuncArgs, String> {
-    let json: serde_json::Value =
+    let json: Value =
         serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     if json.as_object().map_or(false, |obj| obj.is_empty()) {
@@ -32,25 +32,20 @@ fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<Vec
 
     let mut args = Vec::new();
 
-    for (field_name, field_type) in &schema_def.fields {
-        let value = value
-            .get(field_name)
-            .ok_or_else(|| format!("Missing field: {} in schema {}", field_name, schema_name))?;
+    // Iterate over the fields in the order in which they are defined. 
+    // This is important because the order of fields in the structure affects how they are transmitted in the VM.
+    for field in &schema_def.fields {
+        let field_value = value
+            .get(&field.name)
+            .ok_or_else(|| format!("Missing field: {} in schema {}", field.name, schema_name))?;
 
-        let parsed = parse_value(value, field_type, schema)?;
+        let parsed = parse_value(field_value, &field.ty, schema)?;
         args.extend(parsed);
     }
 
     Ok(args)
 }
 
-// Values are passing as follow in CairoVM.
-// Integers, Felt252: CairoVM is waiting for a Felt252
-// Boolean: CairoVM is waiting for a Felt252, containing 0 or 1
-// Array, Span: CairoVM is waiting for an array of Felt252 structured as follow: [array_len, val1, val2, ...]
-// Struct: CairoVM is waiting for a list of Felt252
-// F64: F64 is technically a struct in Orion. But for better DX, it's handled as a Primitive. CairoVM is waiting for a Felt252.
-// ByteArray: CairoVM is waiting for a specific struct.
 fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Felt252>, String> {
     match ty {
         SchemaType::Primitive { name } => match name.as_str() {
@@ -78,7 +73,7 @@ fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Fe
                     .ok_or_else(|| "Expected a string".to_string())?;
 
                 // Check if the string is a valid number
-                if is_valid_number(string) | string.starts_with("0x") {
+                if is_valid_number(string) || string.starts_with("0x") {
                     Ok(vec![Felt252::from_str(string).map_err(|e| e.to_string())?])
                 } else {
                     Ok(vec![Felt252::from_str(

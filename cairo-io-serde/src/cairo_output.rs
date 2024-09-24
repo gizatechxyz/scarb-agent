@@ -391,23 +391,23 @@ fn serialize_output_inner<'a>(
             for (index, member_type_id) in info.members.iter().enumerate() {
                 let field_info = schema_def.fields.iter().nth(index);
                 
-                if let Some((field_name, field_type)) = field_info {
-                    json_object.insert(
-                        field_name.clone(),
-                        serialize_output_inner(
-                            return_values_iter,
-                            vm,
-                            member_type_id,
-                            sierra_program_registry,
-                            type_sizes,
-                            schema,
-                            match field_type {
-                                SchemaType::Struct { name } => name,
-                                _ => current_schema_name,
-                            },
-                        ),
-                    );
-                }
+                // if let Some((field_name, field_type)) = field_info {
+                //     json_object.insert(
+                //         field_name.clone(),
+                //         serialize_output_inner(
+                //             return_values_iter,
+                //             vm,
+                //             member_type_id,
+                //             sierra_program_registry,
+                //             type_sizes,
+                //             schema,
+                //             match field_type {
+                //                 SchemaType::Struct { name } => name,
+                //                 _ => current_schema_name,
+                //             },
+                //         ),
+                //     );
+                // }
             }
             JsonValue::Object(json_object)
         },

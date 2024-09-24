@@ -1,6 +1,7 @@
-use serde::{Deserialize, Serialize};
-use serde_yaml;
-use std::collections::BTreeMap;
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -14,24 +15,56 @@ pub(crate) enum SchemaType {
     Struct { name: String },
 }
 
-impl Default for Schema {
-    fn default() -> Self {
-        Schema {
-            schemas: BTreeMap::new(),
-            cairo_input: "None".to_string(),
-            cairo_output: "None".to_string(),
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct SchemaDef {
+    pub(crate) fields: Vec<NamedSchemaType>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct NamedSchemaType {
+    pub(crate) name: String,
+    pub(crate) ty: SchemaType,
+}
+
+impl<'de> Deserialize<'de> for NamedSchemaType {
+    fn deserialize<D>(deserializer: D) -> Result<NamedSchemaType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(NamedSchemaTypeVisitor)
+    }
+}
+
+struct NamedSchemaTypeVisitor;
+
+impl<'de> Visitor<'de> for NamedSchemaTypeVisitor {
+    type Value = NamedSchemaType;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a map with a single key-value pair")
+    }
+
+    fn visit_map<M>(self, mut map: M) -> Result<NamedSchemaType, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        if let Some((key, value)) = map.next_entry::<String, SchemaType>()? {
+            if map.next_key::<de::IgnoredAny>()?.is_some() {
+                return Err(de::Error::custom("Expected only one key per field"));
+            }
+            Ok(NamedSchemaType {
+                name: key,
+                ty: value,
+            })
+        } else {
+            Err(de::Error::custom("Expected at least one key-value pair"))
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct SchemaDef {
-    pub(crate) fields: BTreeMap<String, SchemaType>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Schema {
-    pub(crate) schemas: BTreeMap<String, SchemaDef>,
+    pub(crate) schemas: HashMap<String, SchemaDef>,
     pub(crate) cairo_input: String,
     pub(crate) cairo_output: String,
 }
