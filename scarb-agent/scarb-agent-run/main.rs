@@ -194,8 +194,6 @@ fn run() -> Result<String> {
 
     let func_args = get_func_args(&args, &schema)?;
 
-    println!("Func Args: {:?}", func_args);
-
     let result = run_1(
         &service_configuration,
         &str_into_layout(&args.layout),
