@@ -410,4 +410,131 @@ mod tests {
 
         assert_eq!(parsed["byte_array"], "Hello, World!");
     }
+
+    #[test]
+    fn test_insufficient_output_data() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - value:
+                        type: Primitive
+                        name: u32
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![]; // Empty output
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unexpected end of output"));
+    }
+
+    #[test]
+    fn test_invalid_primitive_type() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - value:
+                        type: Primitive
+                        name: invalid_type
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![Felt252::from(42)];
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Unknown primitive type: invalid_type"));
+    }
+
+    #[test]
+    fn test_invalid_array_length() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - array:
+                        type: Array
+                        item_type:
+                            type: Primitive
+                            name: u32
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![Felt252::from(3), Felt252::from(1), Felt252::from(2)]; // Declared length 3, but only 2 elements
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unexpected end of output"));
+    }
+
+    #[test]
+    fn test_invalid_byte_array() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - byte_array:
+                        type: Primitive
+                        name: ByteArray
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![
+            Felt252::from(2),   // Length
+            Felt252::from(255), // Invalid UTF-8 byte
+            Felt252::from(255), // Invalid UTF-8 byte
+            Felt252::from(0),   // Pending word
+            Felt252::from(0),   // Pending word length
+        ];
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid UTF-8 sequence"));
+    }
+
+    #[test]
+    fn test_missing_schema() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - value:
+                        type: Struct
+                        name: MissingStruct
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![Felt252::from(42)];
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Schema MissingStruct not found in schema"));
+    }
 }

@@ -446,4 +446,169 @@ mod tests {
             ])
         );
     }
+
+    #[test]
+    fn test_missing_field() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+                    - optional:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": 42});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing field: optional"));
+    }
+
+    #[test]
+    fn test_invalid_type() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": "NaN"});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected unsigned integer"));
+    }
+
+    #[test]
+    fn test_unknown_field() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": 42, "unknown": "extra"});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_json() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = r#"{"request": 42,}"#;
+
+        let result = process_json_args(json, &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse JSON"));
+    }
+
+    #[test]
+    fn test_invalid_byte_array() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: ByteArray
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": 12345});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Expected string for ByteArray"));
+    }
+
+    #[test]
+    fn test_invalid_array_type() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Array
+                        item_type:
+                            type: Primitive
+                            name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": "not an array"});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected array"));
+    }
+
+    #[test]
+    fn test_invalid_nested_struct() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Struct
+                        name: Nested
+            Nested:
+                fields:
+                    - value:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": {"value": "not a number"}});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected unsigned integer"));
+    }
 }
