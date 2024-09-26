@@ -36,7 +36,7 @@ fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<Vec
     for field in &schema_def.fields {
         let field_value = value
             .get(&field.name)
-            .ok_or_else(|| format!("Missing field: {} in schema {}", field.name, schema_name))?;
+            .ok_or_else(|| format!("Missing field: {} from schema {} in {}", field.name, schema_name, value))?;
 
         let parsed = parse_value(field_value, &field.ty, schema)?;
         args.extend(parsed);
