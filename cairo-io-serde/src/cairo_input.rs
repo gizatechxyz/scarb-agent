@@ -5,22 +5,25 @@ use std::str::FromStr;
 
 use crate::{
     schema::{Schema, SchemaType},
+    utils::is_valid_number,
     FuncArg, FuncArgs,
 };
 
 pub fn process_json_args(json_str: &str, schema: &Schema) -> Result<FuncArgs, String> {
-    let json: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let json: Value =
+        serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     if json.as_object().map_or(false, |obj| obj.is_empty()) {
         // Return default (empty) FuncArgs if JSON is empty
         return Ok(FuncArgs::default());
     }
 
-    parse_schema(&json, &schema.cairo_input, schema)
+    let parsed = parse_schema(&json, &schema.cairo_input, schema)?;
+
+    Ok(FuncArgs(vec![FuncArg::Array(parsed)]))
 }
 
-fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<FuncArgs, String> {
+fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<Vec<Felt252>, String> {
     let schema_def = schema
         .schemas
         .get(schema_name)
@@ -28,48 +31,55 @@ fn parse_schema(value: &Value, schema_name: &str, schema: &Schema) -> Result<Fun
 
     let mut args = Vec::new();
 
-    for (field_name, field_type) in &schema_def.fields {
-        let value = value
-            .get(field_name)
-            .ok_or_else(|| format!("Missing field: {} in schema {}", field_name, schema_name))?;
+    // Iterate over the fields in the order in which they are defined.
+    // This is important because the order of fields in the structure affects how they are transmitted in the VM.
+    for field in &schema_def.fields {
+        let field_value = value
+            .get(&field.name)
+            .ok_or_else(|| format!("Missing field: {} from schema {} in {}", field.name, schema_name, value))?;
 
-        let parsed = parse_value(value, field_type, schema)?;
+        let parsed = parse_value(field_value, &field.ty, schema)?;
         args.extend(parsed);
     }
 
-    Ok(FuncArgs(args))
+    Ok(args)
 }
 
-fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<FuncArg>, String> {
+fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Felt252>, String> {
     match ty {
         SchemaType::Primitive { name } => match name.as_str() {
             "u64" | "u32" | "u16" | "u8" => {
                 let num = value
                     .as_u64()
                     .ok_or_else(|| format!("Expected unsigned integer for {}", name))?;
-                Ok(vec![FuncArg::Single(Felt252::from(num))])
+                Ok(vec![Felt252::from(num)])
             }
             "i64" | "i32" | "i16" | "i8" => {
                 let num = value
                     .as_i64()
                     .ok_or_else(|| format!("Expected signed integer for {}", name))?;
-                Ok(vec![FuncArg::Single(Felt252::from(num))])
+                Ok(vec![Felt252::from(num)])
             }
             "F64" => {
                 let num = value
                     .as_f64()
                     .ok_or_else(|| format!("Expected float for {}", name))?;
-                Ok(vec![FuncArg::Single(Felt252::from(
-                    (num * 2.0_f64.powi(32)) as i64,
-                ))])
+                Ok(vec![Felt252::from((num * 2.0_f64.powi(32)) as i64)])
             }
             "felt252" => {
                 let string = value
                     .as_str()
-                    .ok_or_else(|| "Expected string for Felt252".to_string())?;
-                Ok(vec![FuncArg::Single(
-                    Felt252::from_str(string).map_err(|e| e.to_string())?,
-                )])
+                    .ok_or_else(|| "Expected a string".to_string())?;
+
+                // Check if the string is a valid number
+                if is_valid_number(string) || string.starts_with("0x") {
+                    Ok(vec![Felt252::from_str(string).map_err(|e| e.to_string())?])
+                } else {
+                    Ok(vec![Felt252::from_str(
+                        &("0x".to_string() + &hex::encode(string)),
+                    )
+                    .map_err(|e| e.to_string())?])
+                }
             }
             "ByteArray" => {
                 let string = value
@@ -81,7 +91,7 @@ fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Fu
                 let bool_value = value
                     .as_bool()
                     .ok_or_else(|| "Expected boolean value".to_string())?;
-                Ok(vec![FuncArg::Single(Felt252::from(bool_value as u64))])
+                Ok(vec![Felt252::from(bool_value as u64)])
             }
             _ => Err(format!("Unknown primitive type: {}", name)),
         },
@@ -90,37 +100,27 @@ fn parse_value(value: &Value, ty: &SchemaType, schema: &Schema) -> Result<Vec<Fu
                 .as_array()
                 .ok_or_else(|| "Expected array".to_string())?;
             let mut result = Vec::new();
+            result.push(Felt252::from(array.len()));
             for item in array {
                 let parsed = parse_value(item, item_type, schema)?;
                 result.extend(parsed);
             }
-            Ok(vec![FuncArg::Array(
-                result
-                    .into_iter()
-                    .flat_map(|arg| match arg {
-                        FuncArg::Single(felt) => vec![felt],
-                        FuncArg::Array(arr) => arr,
-                    })
-                    .collect(),
-            )])
+            Ok(result)
         }
-        SchemaType::Struct { name } => {
-            parse_schema(value, name, schema).map(|func_args| func_args.0)
-        }
+        SchemaType::Struct { name } => parse_schema(value, name, schema).map(|func_args| func_args),
     }
 }
 
-fn parse_byte_array(string: &str) -> Result<Vec<FuncArg>, String> {
+fn parse_byte_array(string: &str) -> Result<Vec<Felt252>, String> {
     let byte_array =
         ByteArray::from_string(string).map_err(|e| format!("Error parsing ByteArray: {}", e))?;
 
     let mut result = Vec::new();
-    let data = byte_array.data.iter().map(|b| b.felt()).collect::<Vec<_>>();
-    result.push(FuncArg::Array(data));
-    result.push(FuncArg::Single(byte_array.pending_word));
-    result.push(FuncArg::Single(Felt252::from(
-        byte_array.pending_word_len as u64,
-    )));
+    let mut data = byte_array.data.iter().map(|b| b.felt()).collect::<Vec<_>>();
+    result.push(Felt252::from(data.len()));
+    result.append(&mut data);
+    result.push(byte_array.pending_word);
+    result.push(Felt252::from(byte_array.pending_word_len as u64));
 
     Ok(result)
 }
@@ -130,6 +130,7 @@ mod tests {
     use crate::schema::parse_schema_file;
 
     use super::*;
+    use serde_json::json;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -140,171 +141,474 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_input_schema_and_process_json_args() {
-        // Create a temporary input schema file
+    fn test_unsigned() {
         let input_schema = r#"
         schemas:
-          Input:
-            fields:
-              a:
-                type: Primitive
-                name: u32
-              b:
-                type: Primitive
-                name: felt252
-              c:
-                type: Array
-                item_type:
-                  type: Primitive
-                  name: i32
-              d:
-                type: Span
-                item_type:
-                  type: Struct
-                  name: NestedSchema
-              e:
-                type: Primitive
-                name: ByteArray
-              f:
-                type: Struct
-                name: AnotherNestedSchema
-              g:
-                type: Primitive
-                name: bool
-              h:
-                type: Primitive
-                name: F64
-              i:
-                type: Span
-                item_type:
-                  type: Primitive
-                  name: F64
-          NestedSchema:
-            fields:
-              a:
-                type: Primitive
-                name: u32
-              b:
-                type: Primitive
-                name: i32
-              c:
-                type: Primitive
-                name: felt252
-              d:
-                type: Primitive
-                name: ByteArray
-          AnotherNestedSchema:
-            fields:
-              a:
-                type: Primitive
-                name: u32
-              b:
-                type: Primitive
-                name: i64
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
         cairo_input: Input
-        cairo_output: None
+        cairo_output: null
         "#;
 
         let schema_file = create_temp_file_with_content(input_schema);
         let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
 
-        // Create JSON input
-        let json = r#"
-        {
-            "a": 42,
-            "b": "0x68656c6c6f",
-            "c": [1, -2, 3],
-            "d": [
-                {
-                    "a": 10,
-                    "b": -20,
-                    "c": "30",
-                    "d": "ABCD"
-                },
-                {
-                    "a": 40,
-                    "b": -50,
-                    "c": "-60",
-                    "d": "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345"
-                }
-            ],
-            "e": "Hello world, how are you doing today?",
-            "f": {
-                "a": 1,
-                "b": 2
-            },
-            "g": true,
-            "h": 0.5,
-            "i": [0.5, 0.5]
-        }"#;
+        let json = json!({"request": 42});
 
-        let result = process_json_args(json, &input_schema).unwrap();
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
 
-        // Assertions
-        assert_eq!(result.0.len(), 12);
-        assert_eq!(result.0[0], FuncArg::Single(Felt252::from(42)));
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(result.0[0], FuncArg::Array(vec![Felt252::from(42)]));
+    }
+
+    #[test]
+    fn test_signed() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: i32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let json = json!({"request": -42});
+
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(result.0[0], FuncArg::Array(vec![Felt252::from(-42)]));
+    }
+
+    #[test]
+    fn test_f64() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: F64
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let json = json!({"request": 0.5});
+
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+
+        assert_eq!(result.0.len(), 1);
         assert_eq!(
-            result.0[1],
-            FuncArg::Single(Felt252::from_str("0x68656c6c6f").unwrap())
+            result.0[0],
+            FuncArg::Array(vec![Felt252::from_hex("0x80000000").unwrap()])
         );
+    }
+
+    #[test]
+    fn test_felt252() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: felt252
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        // Case 1: string is a valid number
+        let json = json!({"request": "42"});
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(result.0[0], FuncArg::Array(vec![Felt252::from(42)]));
+
+        // Case 2: string is a hex
+        let json = json!({"request": "0x1234"});
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+        assert_eq!(result.0.len(), 1);
         assert_eq!(
-            result.0[2],
+            result.0[0],
+            FuncArg::Array(vec![Felt252::from_hex("0x1234").unwrap()])
+        );
+
+        // Case 2: string is a short string
+        let json = json!({"request": "hello"});
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(
+            result.0[0],
+            FuncArg::Array(vec![Felt252::from_hex("0x68656c6c6f").unwrap()])
+        );
+    }
+
+    #[test]
+    fn test_byte_array() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: ByteArray
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let json = json!({"request": "ZK is a way of building trust in the world. The age of integrity is upon us."});
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(
+            result.0[0],
             FuncArg::Array(vec![
+                Felt252::from_hex("0x2").unwrap(),
+                Felt252::from_hex(
+                    "0x5a4b206973206120776179206f66206275696c64696e672074727573742069"
+                )
+                .unwrap(),
+                Felt252::from_hex(
+                    "0x6e2074686520776f726c642e2054686520616765206f6620696e7465677269"
+                )
+                .unwrap(),
+                Felt252::from_hex("0x74792069732075706f6e2075732e").unwrap(),
+                Felt252::from_hex("0xe").unwrap(),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_bool() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: bool
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let json = json!({"request": true});
+
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(result.0[0], FuncArg::Array(vec![Felt252::from(1)]));
+    }
+
+    #[test]
+    fn test_array() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Array
+                        item_type:
+                            type: Primitive
+                            name: i32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let json = json!({"request": [1, 2, 3]});
+
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+
+        assert_eq!(result.0.len(), 1);
+        assert_eq!(
+            result.0[0],
+            FuncArg::Array(vec![
+                Felt252::from(3),
                 Felt252::from(1),
-                Felt252::from(-2i64),
+                Felt252::from(2),
                 Felt252::from(3)
             ])
         );
+    }
+
+    #[test]
+    fn test_span() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Span
+                        item_type:
+                            type: Primitive
+                            name: i32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let json = json!({"request": [1, 2, 3]});
+
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+
+        assert_eq!(result.0.len(), 1);
         assert_eq!(
-            result.0[3],
+            result.0[0],
             FuncArg::Array(vec![
-                Felt252::from(10),
-                Felt252::from(-20i64),
-                Felt252::from(30),
-                Felt252::from_hex(
-                    "0x0000000000000000000000000000000000000000000000000000000041424344"
-                )
-                .unwrap(),
-                Felt252::from(4),
-                Felt252::from(40),
-                Felt252::from(-50i64),
-                Felt252::from(-60i64),
-                Felt252::from_hex(
-                    "0x004142434445464748494a4b4c4d4e4f505152535455565758595a3132333435"
-                )
-                .unwrap(),
-                Felt252::from(0),
-                Felt252::from(0),
+                Felt252::from(3),
+                Felt252::from(1),
+                Felt252::from(2),
+                Felt252::from(3)
             ])
         );
+    }
+
+    #[test]
+    fn test_complex() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Struct
+                        name: MyStruct
+            MyStruct:
+                fields:
+                    - n:
+                        type: Primitive
+                        name: i64
+                    - m:
+                        type: Span
+                        item_type:
+                            type: Primitive
+                            name: i32
+                    - o:
+                        type: Struct
+                        name: Nest
+            Nest:
+                fields:
+                    - y:
+                        type: Primitive
+                        name: u32
+                    - z:
+                        type: Span
+                        item_type:
+                            type: Primitive
+                            name: i32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let json = json!({"request": {"n": 42, "m": [1, 2, 3], "o": {"y": 42, "z": [1, 2, 3]}}});
+
+        let result = process_json_args(&json.to_string(), &input_schema).unwrap();
+
+        assert_eq!(result.0.len(), 1);
         assert_eq!(
-            result.0[4],
-            FuncArg::Array(vec![Felt252::from_hex(
-                "0x48656c6c6f20776f726c642c20686f772061726520796f7520646f696e6720"
-            )
-            .unwrap()])
-        );
-        assert_eq!(
-            result.0[5],
-            FuncArg::Single(Felt252::from_hex("0x746f6461793f").unwrap())
-        );
-        assert_eq!(
-            result.0[6],
-            FuncArg::Single(Felt252::from_hex("0x6").unwrap())
-        );
-        assert_eq!(result.0[7], FuncArg::Single(Felt252::from(1)));
-        assert_eq!(result.0[8], FuncArg::Single(Felt252::from(2)));
-        assert_eq!(result.0[9], FuncArg::Single(Felt252::from(1)));
-        assert_eq!(
-            result.0[10],
-            FuncArg::Single(Felt252::from_hex("0x80000000").unwrap())
-        );
-        assert_eq!(
-            result.0[11],
+            result.0[0],
             FuncArg::Array(vec![
-                Felt252::from_hex("0x80000000").unwrap(),
-                Felt252::from_hex("0x80000000").unwrap(),
+                Felt252::from_hex("0x2a").unwrap(), // Value of "n" field
+                Felt252::from_hex("0x3").unwrap(),  // Len of "m" array
+                Felt252::from_hex("0x1").unwrap(),  // value of "m" array at index 0
+                Felt252::from_hex("0x2").unwrap(),  // value of "m" array at index 1
+                Felt252::from_hex("0x3").unwrap(),  // value of "m" array at index 2
+                Felt252::from_hex("0x2a").unwrap(), // Value of "y" field
+                Felt252::from_hex("0x3").unwrap(),  // Len of "z" array
+                Felt252::from_hex("0x1").unwrap(),  // value of "z" array at index 0
+                Felt252::from_hex("0x2").unwrap(),  // value of "z" array at index 1
+                Felt252::from_hex("0x3").unwrap(),  // value of "z" array at index 2
             ])
         );
+    }
+
+    #[test]
+    fn test_missing_field() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+                    - optional:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": 42});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing field: optional"));
+    }
+
+    #[test]
+    fn test_invalid_type() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": "NaN"});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected unsigned integer"));
+    }
+
+    #[test]
+    fn test_unknown_field() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": 42, "unknown": "extra"});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_json() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = r#"{"request": 42,}"#;
+
+        let result = process_json_args(json, &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse JSON"));
+    }
+
+    #[test]
+    fn test_invalid_byte_array() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Primitive
+                        name: ByteArray
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": 12345});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Expected string for ByteArray"));
+    }
+
+    #[test]
+    fn test_invalid_array_type() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Array
+                        item_type:
+                            type: Primitive
+                            name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": "not an array"});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected array"));
+    }
+
+    #[test]
+    fn test_invalid_nested_struct() {
+        let input_schema = r#"
+        schemas:
+            Input:
+                fields:
+                    - request:
+                        type: Struct
+                        name: Nested
+            Nested:
+                fields:
+                    - value:
+                        type: Primitive
+                        name: u32
+        cairo_input: Input
+        cairo_output: null
+        "#;
+
+        let schema_file = create_temp_file_with_content(input_schema);
+        let input_schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+        let json = json!({"request": {"value": "not a number"}});
+
+        let result = process_json_args(&json.to_string(), &input_schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected unsigned integer"));
     }
 }

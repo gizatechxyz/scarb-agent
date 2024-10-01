@@ -1,7 +1,8 @@
-use cainome_cairo_serde::ByteArray;
+use std::{collections::VecDeque, iter::Peekable};
+
 use cairo_lang_sierra::{
     extensions::core::{CoreLibfunc, CoreType},
-    ids::{ConcreteTypeId, UserTypeId},
+    ids::ConcreteTypeId,
     program::GenericArg,
     program_registry::ProgramRegistry,
 };
@@ -10,12 +11,109 @@ use cairo_vm::{
     math_utils::signed_felt, types::relocatable::MaybeRelocatable, vm::vm_core::VirtualMachine,
     Felt252,
 };
-use itertools::Itertools;
-use num_traits::{cast::ToPrimitive, Zero};
-use serde_json::Value as JsonValue;
-use std::iter::Peekable;
+use num_traits::cast::ToPrimitive;
+use serde_json::{json, Value};
 
 use crate::schema::{Schema, SchemaType};
+
+pub fn process_output(output: Vec<Felt252>, schema: &Schema) -> Result<String, String> {
+    let schema_name = &schema.cairo_output;
+    let mut output_queue: VecDeque<Felt252> = output.into();
+
+    let parsed = parse_schema(&mut output_queue, schema_name, schema)?;
+
+    serde_json::to_string_pretty(&parsed).map_err(|e| format!("Failed to serialize to JSON: {}", e))
+}
+
+fn parse_schema(
+    output_queue: &mut VecDeque<Felt252>,
+    schema_name: &str,
+    schema: &Schema,
+) -> Result<Value, String> {
+    let schema_def = schema
+        .schemas
+        .get(schema_name)
+        .ok_or_else(|| format!("Schema {} not found in schema", schema_name))?;
+
+    let mut result = json!({});
+
+    for field in &schema_def.fields {
+        let parsed = parse_value(output_queue, &field.ty, schema)?;
+        result[&field.name] = parsed;
+    }
+
+    Ok(result)
+}
+
+fn parse_value(
+    output_queue: &mut VecDeque<Felt252>,
+    ty: &SchemaType,
+    schema: &Schema,
+) -> Result<Value, String> {
+    match ty {
+        SchemaType::Primitive { name } => match name.as_str() {
+            "u64" | "u32" | "u16" | "u8" => {
+                let value = output_queue.pop_front().ok_or("Unexpected end of output")?;
+                Ok(json!(value.to_u64()))
+            }
+            "i64" | "i32" | "i16" | "i8" => {
+                let value = output_queue.pop_front().ok_or("Unexpected end of output")?;
+                Ok(json!(signed_felt(value).to_i64()))
+            }
+            "F64" => {
+                let value = output_queue.pop_front().ok_or("Unexpected end of output")?;
+                let float_value = (value.to_i64().unwrap() as f64) / 2f64.powi(32);
+                Ok(json!(float_value))
+            }
+            "felt252" => {
+                let value = output_queue.pop_front().ok_or("Unexpected end of output")?;
+                Ok(json!(value.to_hex_string()))
+            }
+            "ByteArray" => {
+                let length = output_queue
+                    .pop_front()
+                    .ok_or("Unexpected end of output")?
+                    .to_usize()
+                    .unwrap();
+                let mut bytes = Vec::new();
+                for _ in 0..length {
+                    let byte = output_queue.pop_front().ok_or("Unexpected end of output")?;
+                    bytes.push(byte.to_u8().unwrap());
+                }
+                let pending_word = output_queue.pop_front().ok_or("Unexpected end of output")?;
+                let pending_word_len =
+                    output_queue.pop_front().ok_or("Unexpected end of output")?;
+
+                let mut result = String::from_utf8(bytes)
+                    .map_err(|e| format!("Invalid UTF-8 sequence: {}", e))?;
+                if pending_word_len.to_usize().unwrap() > 0 {
+                    result.push_str(&pending_word.to_string());
+                }
+
+                Ok(json!(result))
+            }
+            "bool" => {
+                let value = output_queue.pop_front().ok_or("Unexpected end of output")?;
+                Ok(json!(value != Felt252::ZERO))
+            }
+            _ => Err(format!("Unknown primitive type: {}", name)),
+        },
+        SchemaType::Array { item_type } | SchemaType::Span { item_type } => {
+            let length = output_queue
+                .pop_front()
+                .ok_or("Unexpected end of output")?
+                .to_usize()
+                .unwrap();
+            let mut result = Vec::new();
+            for _ in 0..length {
+                let parsed = parse_value(output_queue, item_type, schema)?;
+                result.push(parsed);
+            }
+            Ok(json!(result))
+        }
+        SchemaType::Struct { name } => parse_schema(output_queue, name, schema),
+    }
+}
 
 pub fn serialize_output(
     return_values: &[MaybeRelocatable],
@@ -23,38 +121,37 @@ pub fn serialize_output(
     return_type_id: Option<&ConcreteTypeId>,
     sierra_program_registry: &ProgramRegistry<CoreType, CoreLibfunc>,
     type_sizes: &UnorderedHashMap<ConcreteTypeId, i16>,
-    schema: &Schema,
-) -> String {
+) -> Vec<Felt252> {
+    let mut output_vec = Vec::new();
     let return_type_id = if let Some(id) = return_type_id {
         id
     } else {
-        return "null".to_string();
+        return output_vec;
     };
     let mut return_values_iter = return_values.iter().peekable();
-    let json_value = serialize_output_inner(
+    serialize_output_inner(
         &mut return_values_iter,
+        &mut output_vec,
         vm,
         return_type_id,
         sierra_program_registry,
         type_sizes,
-        schema,  
-        &schema.cairo_output,
     );
 
-    serde_json::to_string(&json_value).unwrap_or_else(|_| "null".to_string())
+    output_vec
 }
 
 fn serialize_output_inner<'a>(
     return_values_iter: &mut Peekable<impl Iterator<Item = &'a MaybeRelocatable>>,
+    output_vec: &mut Vec<Felt252>,
     vm: &mut VirtualMachine,
     return_type_id: &ConcreteTypeId,
     sierra_program_registry: &ProgramRegistry<CoreType, CoreLibfunc>,
     type_sizes: &UnorderedHashMap<ConcreteTypeId, i16>,
-    schema: &Schema,
-    current_schema_name: &str,
-) -> JsonValue {
+) {
     match sierra_program_registry.get_type(return_type_id).unwrap() {
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Array(info) => {
+            // Fetch array from memory
             let array_start = return_values_iter
                 .next()
                 .expect("Missing return value")
@@ -70,128 +167,25 @@ fn serialize_output_inner<'a>(
             let array_data = vm.get_continuous_range(array_start, array_size).unwrap();
             let mut array_data_iter = array_data.iter().peekable();
             let array_elem_id = &info.ty;
-
-            let mut json_array = Vec::new();
+            // Serialize array data
             while array_data_iter.peek().is_some() {
-                json_array.push(serialize_output_inner(
+                serialize_output_inner(
                     &mut array_data_iter,
+                    output_vec,
                     vm,
                     array_elem_id,
                     sierra_program_registry,
                     type_sizes,
-                    schema,
-                    current_schema_name
-                ));
+                )
             }
-            JsonValue::Array(json_array)
         }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::Box(info) => {
-            // As this represents a pointer, we need to extract it's values
-            let ptr = return_values_iter
-                .next()
-                .expect("Missing return value")
-                .get_relocatable()
-                .expect("Box Pointer is not Relocatable");
-            let type_size = type_sizes[&info.ty]
-                .try_into()
-                .expect("could not parse to usize");
-            let data = vm
-                .get_continuous_range(ptr, type_size)
-                .expect("Failed to extract value from nullable ptr");
-            let mut data_iter = data.iter().peekable();
-            serialize_output_inner(
-                &mut data_iter,
-                vm,
-                &info.ty,
-                sierra_program_registry,
-                type_sizes,
-                schema,
-                current_schema_name
-            )
-        }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::Const(_) => {
-            unimplemented!("Not supported in the current version")
-        },
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Felt252(_) => {
             let val = return_values_iter
                 .next()
                 .expect("Missing return value")
                 .get_int()
                 .expect("Value is not an integer");
-            JsonValue::String(val.to_hex_string())
-        }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::BoundedInt(_)
-        // Only unsigned integer values implement Into<Bytes31>
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Bytes31(_) => {
-            let val = return_values_iter
-            .next()
-            .expect("Missing return value")
-            .get_int()
-            .expect("Value is not an integer");
-
-            JsonValue::String(val.to_hex_string())
-        }
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Uint8(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Uint16(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Uint32(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Uint64(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Uint128(_) => {
-            let val = return_values_iter
-                .next()
-                .expect("Missing return value")
-                .get_int()
-                .expect("Value is not an integer");
-            JsonValue::Number(val.to_u128().unwrap().into())
-        }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::Sint8(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Sint16(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Sint32(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Sint64(_)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::Sint128(_) => {
-            let val = return_values_iter
-                .next()
-                .expect("Missing return value")
-                .get_int()
-                .expect("Value is not an integer");
-            JsonValue::Number(signed_felt(val).to_i128().unwrap().into())
-        }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::NonZero(info) => {
-            serialize_output_inner(
-                return_values_iter,
-                vm,
-                &info.ty,
-                sierra_program_registry,
-                type_sizes,
-                schema,
-                current_schema_name
-
-            )
-        }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::Nullable(info) => {
-            // As this represents a pointer, we need to extract it's values
-            match return_values_iter.next().expect("Missing return value") {
-                MaybeRelocatable::RelocatableValue(ptr) => {
-                    let type_size = type_sizes[&info.ty]
-                        .try_into()
-                        .expect("could not parse to usize");
-                    let data = vm
-                        .get_continuous_range(*ptr, type_size)
-                        .expect("Failed to extract value from nullable ptr");
-                    let mut data_iter = data.iter().peekable();
-                    serialize_output_inner(
-                        &mut data_iter,
-                        vm,
-                        &info.ty,
-                        sierra_program_registry,
-                        type_sizes,
-                        schema,
-                        current_schema_name
-    
-                    )
-                }
-                MaybeRelocatable::Int(felt) if felt.is_zero() => JsonValue::Null,
-                _ => panic!("Invalid Nullable"),
-            }
+            output_vec.push(val);
         }
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Enum(info) => {
             // First we check if it is a Panic enum, as we already handled panics when fetching return values,
@@ -204,13 +198,11 @@ fn serialize_output_inner<'a>(
                 {
                     return serialize_output_inner(
                         return_values_iter,
+                        output_vec,
                         vm,
                         &info.variants[0],
                         sierra_program_registry,
                         type_sizes,
-                        schema,
-                        current_schema_name
-    
                     );
                 }
             }
@@ -230,31 +222,6 @@ fn serialize_output_inner<'a>(
             };
             let variant_type_id = &info.variants[variant_idx];
 
-            // Handle core::bool separately
-            if let GenericArg::UserType(user_type) = &info.info.long_id.generic_args[0] {
-                if user_type
-                    .debug_name
-                    .as_ref()
-                    .is_some_and(|n| n == "core::bool")
-                {
-                    // Sanity checks
-                    assert!(
-                        *num_variants == 2
-                            && variant_idx < 2
-                            && type_sizes
-                                .get(&info.variants[0])
-                                .is_some_and(|size| size.is_zero())
-                            && type_sizes
-                                .get(&info.variants[1])
-                                .is_some_and(|size| size.is_zero()),
-                        "Malformed bool enum"
-                    );
-
-                    return JsonValue::Bool(variant_idx != 0);
-                }
-            }
-            // TODO: Something similar to the bool handling could be done for unit enum variants if we could get the type info with the variant names
-
             // Space is always allocated for the largest enum member, padding with zeros in front for the smaller variants
             let mut max_variant_size = 0;
             for variant in &info.variants {
@@ -271,230 +238,303 @@ fn serialize_output_inner<'a>(
             }
             serialize_output_inner(
                 return_values_iter,
+                output_vec,
                 vm,
                 variant_type_id,
                 sierra_program_registry,
                 type_sizes,
-                schema,
-                current_schema_name
-
             )
         }
         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Struct(info) => {
-            // Check if this struct is a Span
-            if let Some(UserTypeId { debug_name: Some(name), .. }) = info.info.long_id.generic_args.get(0)
-                .and_then(|arg| if let GenericArg::UserType(user_type) = arg { Some(user_type) } else { None }) {
-                if name.starts_with("core::array::Span") {
-                    if let Some(GenericArg::Type(array_type_id)) = info.info.long_id.generic_args.get(1) {
-                        return serialize_output_inner(
-                            return_values_iter,
-                            vm,
-                            array_type_id,
-                            sierra_program_registry,
-                            type_sizes,
-                            schema,
-                            current_schema_name
-        
-                        );
-                    }
-                }
+            for member_type_id in &info.members {
+                serialize_output_inner(
+                    return_values_iter,
+                    output_vec,
+                    vm,
+                    member_type_id,
+                    sierra_program_registry,
+                    type_sizes,
+                )
             }
-
-            // Check if this struct in a F64 
-            if let Some(UserTypeId { debug_name: Some(name), .. }) = info.info.long_id.generic_args.get(0)
-            .and_then(|arg| if let GenericArg::UserType(user_type) = arg { Some(user_type) } else { None }) {
-            if name.starts_with("orion_numbers::f64::F64") {
-                    let data = serialize_output_inner(
-                        return_values_iter,
-                        vm,
-                        &info.members[0],
-                        sierra_program_registry,
-                        type_sizes,
-                        schema,
-                        current_schema_name
-    
-                    );
-
-                    let fl = if let JsonValue::Number(scaled) = data {
-                        scaled.as_f64().unwrap() / 2.0_f64.powi(32)
-                    } else {
-                        f64::NAN
-                    };
-                    let json_number = serde_json::Number::from_f64(fl).unwrap();
-                    return JsonValue::Number(json_number);
-                }
-            }
-
-            // Check if this struct is a ByteArray
-            if let Some(UserTypeId { debug_name: Some(name), .. }) = info.info.long_id.generic_args.get(0)
-                .and_then(|arg| if let GenericArg::UserType(user_type) = arg { Some(user_type) } else { None }) {
-                if name == "core::byte_array::ByteArray" {
-                    // Handle ByteArray
-                    let data = serialize_output_inner(
-                        return_values_iter,
-                        vm,
-                        &info.members[0],
-                        sierra_program_registry,
-                        type_sizes,
-                        schema,
-                        current_schema_name
-    
-                    );
-                    let pending_word = serialize_output_inner(
-                        return_values_iter,
-                        vm,
-                        &info.members[1],
-                        sierra_program_registry,
-                        type_sizes,
-                        schema,
-                        current_schema_name
-    
-                    );
-                    let pending_word_len = serialize_output_inner(
-                        return_values_iter,
-                        vm,
-                        &info.members[2],
-                        sierra_program_registry,
-                        type_sizes,
-                        schema,
-                        current_schema_name
-    
-                    );
-
-                    // Reconstruct ByteArray
-                    let byte_array = ByteArray {
-                        data: if let JsonValue::Array(arr) = data {
-                            arr.into_iter()
-                                .map(|v| Felt252::from_hex(&v.as_str().unwrap()[2..]).unwrap().try_into().unwrap())
-                                .collect()
-                        } else {
-                            vec![]
-                        },
-                        pending_word: Felt252::from_hex(&pending_word.as_str().unwrap()[2..]).unwrap(),
-                        pending_word_len: pending_word_len.as_u64().unwrap() as usize,
-                    };
-
-                    // Convert to string and return
-                    return match byte_array.to_string() {
-                        Ok(s) => JsonValue::String(s),
-                        Err(_) => JsonValue::Null,
-                    };
-                }
-            }
-            
-            // If it's not a Span, F64, or ByteArray, proceed with normal struct serialization
-            let mut json_object = serde_json::Map::new();
-            
-            let schema_def = schema.schemas.get(current_schema_name)
-                .expect(&format!("Schema {} not found", current_schema_name));
-            
-            for (index, member_type_id) in info.members.iter().enumerate() {
-                let field_info = schema_def.fields.iter().nth(index);
-                
-                if let Some((field_name, field_type)) = field_info {
-                    json_object.insert(
-                        field_name.clone(),
-                        serialize_output_inner(
-                            return_values_iter,
-                            vm,
-                            member_type_id,
-                            sierra_program_registry,
-                            type_sizes,
-                            schema,
-                            match field_type {
-                                SchemaType::Struct { name } => name,
-                                _ => current_schema_name,
-                            },
-                        ),
-                    );
-                }
-            }
-            JsonValue::Object(json_object)
-        },
-         cairo_lang_sierra::extensions::core::CoreTypeConcrete::Felt252Dict(info)
-        | cairo_lang_sierra::extensions::core::CoreTypeConcrete::SquashedFelt252Dict(info) => {
-            let (dict_start, dict_size) = match sierra_program_registry
-                .get_type(return_type_id)
-                .unwrap()
-            {
-                cairo_lang_sierra::extensions::core::CoreTypeConcrete::Felt252Dict(_) => {
-                    let dict_ptr = return_values_iter
-                        .next()
-                        .expect("Missing return val")
-                        .get_relocatable()
-                        .expect("Dict Ptr not Relocatable");
-                    if !(dict_ptr.offset
-                        == vm
-                            .get_segment_size(dict_ptr.segment_index as usize)
-                            .unwrap_or_default()
-                        && dict_ptr.offset % 3 == 0)
-                    {
-                        panic!("Return value is not a valid Felt252Dict")
-                    }
-                    ((dict_ptr.segment_index, 0).into(), dict_ptr.offset)
-                }
-                cairo_lang_sierra::extensions::core::CoreTypeConcrete::SquashedFelt252Dict(_) => {
-                    let dict_start = return_values_iter
-                        .next()
-                        .expect("Missing return val")
-                        .get_relocatable()
-                        .expect("Squashed dict_start ptr not Relocatable");
-                    let dict_end = return_values_iter
-                        .next()
-                        .expect("Missing return val")
-                        .get_relocatable()
-                        .expect("Squashed dict_end ptr not Relocatable");
-                    let dict_size = (dict_end - dict_start).unwrap();
-                    if dict_size % 3 != 0 {
-                        panic!("Return value is not a valid SquashedFelt252Dict")
-                    }
-                    (dict_start, dict_size)
-                }
-                _ => unreachable!(),
-            };
-
-            let value_type_id = &info.ty;
-            let dict_mem = vm
-                .get_continuous_range(dict_start, dict_size)
-                .expect("Malformed dictionary memory");
-
-            let mut json_object = serde_json::Map::new();
-            for (key, _, value) in dict_mem.iter().tuples() {
-                let key_string = key.to_string();
-                let value_vec = vec![value.clone()];
-                let mut value_iter = value_vec.iter().peekable();
-                json_object.insert(
-                    key_string,
-                    serialize_output_inner(
-                        &mut value_iter,
-                        vm,
-                        value_type_id,
-                        sierra_program_registry,
-                        type_sizes,
-                        schema,
-                        current_schema_name
-    
-                    ),
-                );
-            }
-            JsonValue::Object(json_object)
-        }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::Snapshot(info) => {
-            serialize_output_inner(
-                return_values_iter,
-                vm,
-                &info.ty,
-                sierra_program_registry,
-                type_sizes,
-                schema,
-                current_schema_name
-            )
-        }
-        cairo_lang_sierra::extensions::core::CoreTypeConcrete::GasBuiltin(_info) => {
-            // Ignore it
-            let _ = return_values_iter.next();
-            JsonValue::Null
         }
         _ => panic!("Unexpected return type"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::parse_schema_file;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn create_temp_file_with_content(content: &str) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file
+    }
+
+    #[test]
+    fn test_process_output_primitive_types() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - unsigned:
+                        type: Primitive
+                        name: u32
+                    - signed:
+                        type: Primitive
+                        name: i32
+                    - float:
+                        type: Primitive
+                        name: F64
+                    - felt:
+                        type: Primitive
+                        name: felt252
+                    - boolean:
+                        type: Primitive
+                        name: bool
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![
+            Felt252::from(42),
+            Felt252::from(-42),
+            Felt252::from_hex("0x80000000").unwrap(), // 0.5 in fixed-point representation
+            Felt252::from_hex("0x1234").unwrap(),
+            Felt252::from(1),
+        ];
+
+        let result = process_output(output, &schema).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+
+        assert_eq!(parsed["unsigned"], 42);
+        assert_eq!(parsed["signed"], -42);
+        assert_eq!(parsed["float"], 0.5);
+        assert_eq!(parsed["felt"], "0x1234");
+        assert_eq!(parsed["boolean"], true);
+    }
+
+    #[test]
+    fn test_process_output_array_and_struct() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - array:
+                        type: Array
+                        item_type:
+                            type: Primitive
+                            name: u32
+                    - nested:
+                        type: Struct
+                        name: Nested
+            Nested:
+                fields:
+                    - value:
+                        type: Primitive
+                        name: u32
+                    - inner_array:
+                        type: Array
+                        item_type:
+                            type: Primitive
+                            name: u32
+        cairo_input: Input
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![
+            Felt252::from(3), // Length of the first array
+            Felt252::from(1),
+            Felt252::from(2),
+            Felt252::from(3),
+            Felt252::from(42), // Nested struct's value
+            Felt252::from(2),  // Length of the inner array
+            Felt252::from(4),
+            Felt252::from(5),
+        ];
+
+        let result = process_output(output, &schema).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+
+        assert_eq!(parsed["array"], json!([1, 2, 3]));
+        assert_eq!(parsed["nested"]["value"], 42);
+        assert_eq!(parsed["nested"]["inner_array"], json!([4, 5]));
+    }
+
+    #[test]
+    fn test_process_output_byte_array() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - byte_array:
+                        type: Primitive
+                        name: ByteArray
+        cairo_input: Input
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![
+            Felt252::from(13),  // Length of the byte array
+            Felt252::from(72),  // 'H'
+            Felt252::from(101), // 'e'
+            Felt252::from(108), // 'l'
+            Felt252::from(108), // 'l'
+            Felt252::from(111), // 'o'
+            Felt252::from(44),  // ','
+            Felt252::from(32),  // ' '
+            Felt252::from(87),  // 'W'
+            Felt252::from(111), // 'o'
+            Felt252::from(114), // 'r'
+            Felt252::from(108), // 'l'
+            Felt252::from(100), // 'd'
+            Felt252::from(33),  // '!'
+            Felt252::from(0),   // Pending word
+            Felt252::from(0),   // Pending word length
+        ];
+
+        let result = process_output(output, &schema).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+
+        assert_eq!(parsed["byte_array"], "Hello, World!");
+    }
+
+    #[test]
+    fn test_insufficient_output_data() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - value:
+                        type: Primitive
+                        name: u32
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![]; // Empty output
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unexpected end of output"));
+    }
+
+    #[test]
+    fn test_invalid_primitive_type() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - value:
+                        type: Primitive
+                        name: invalid_type
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![Felt252::from(42)];
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Unknown primitive type: invalid_type"));
+    }
+
+    #[test]
+    fn test_invalid_array_length() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - array:
+                        type: Array
+                        item_type:
+                            type: Primitive
+                            name: u32
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![Felt252::from(3), Felt252::from(1), Felt252::from(2)]; // Declared length 3, but only 2 elements
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unexpected end of output"));
+    }
+
+    #[test]
+    fn test_invalid_byte_array() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - byte_array:
+                        type: Primitive
+                        name: ByteArray
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![
+            Felt252::from(2),   // Length
+            Felt252::from(255), // Invalid UTF-8 byte
+            Felt252::from(255), // Invalid UTF-8 byte
+            Felt252::from(0),   // Pending word
+            Felt252::from(0),   // Pending word length
+        ];
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid UTF-8 sequence"));
+    }
+
+    #[test]
+    fn test_missing_schema() {
+        let schema_content = r#"
+        schemas:
+            Output:
+                fields:
+                    - value:
+                        type: Struct
+                        name: MissingStruct
+        cairo_input: null
+        cairo_output: Output
+        "#;
+
+        let schema_file = create_temp_file_with_content(schema_content);
+        let schema = parse_schema_file(&schema_file.path().to_path_buf()).unwrap();
+
+        let output = vec![Felt252::from(42)];
+
+        let result = process_output(output, &schema);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Schema MissingStruct not found in schema"));
     }
 }
