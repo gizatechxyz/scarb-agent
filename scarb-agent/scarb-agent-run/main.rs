@@ -194,7 +194,7 @@ fn run() -> Result<String> {
 
     let func_args = get_func_args(&args, &schema)?;
 
-    let result = run_1(
+    let (result, _) = run_1(
         &service_configuration,
         &str_into_layout(&args.layout),
         &args.trace_file,
@@ -207,9 +207,9 @@ fn run() -> Result<String> {
         &sierra_program,
         "::main",
         args.proof_mode,
-    );
+    )?;
 
-    process_result(result, args.postprocess)
+    process_result(Ok(result), args.postprocess)
 }
 
 fn get_func_args(args: &Args, schema: &Schema) -> Result<FuncArgs> {

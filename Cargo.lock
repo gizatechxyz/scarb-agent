@@ -542,7 +542,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-io-serde"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "cainome-cairo-serde",
  "cairo-lang-sierra",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-hints-test-runner"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "cairo-felt",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-oracle-hint-processor"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-proto-build"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "cairo-proto-serde",
@@ -1188,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-proto-serde"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "cairo-lang-runner",
  "cairo-vm 1.0.0",
@@ -4875,7 +4875,7 @@ dependencies = [
 
 [[package]]
 name = "scarb-agent"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "bincode",

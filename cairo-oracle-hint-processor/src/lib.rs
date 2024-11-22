@@ -21,6 +21,7 @@ use cairo_vm::vm::errors::memory_errors::MemoryError;
 use cairo_vm::vm::errors::runner_errors::RunnerError;
 use cairo_vm::vm::errors::trace_errors::TraceError;
 use cairo_vm::vm::errors::vm_errors::VirtualMachineError;
+use cairo_vm::vm::runners::cairo_runner::CairoRunner;
 use cairo_vm::Felt252;
 use thiserror::Error;
 
@@ -132,7 +133,7 @@ pub fn run_1(
     sierra_program: &SierraProgram,
     entry_func_name: &str,
     proof_mode: bool,
-) -> Result<Option<String>, Error> {
+) -> Result<(Option<String>, CairoRunner), Error> {
     let cairo_run_config = Cairo1RunConfig {
         proof_mode: proof_mode,
         serialize_output: true,
@@ -189,6 +190,7 @@ pub fn run_1(
     if let Some(trace_path) = trace_file {
         let relocated_trace = runner
             .relocated_trace
+            .as_ref() 
             .ok_or(Error::Trace(TraceError::TraceNotRelocated))?;
         let trace_file = std::fs::File::create(trace_path)?;
         let mut trace_writer =
@@ -206,5 +208,5 @@ pub fn run_1(
         memory_writer.flush()?;
     }
 
-    Ok(return_values)
+    Ok((return_values, runner))
 }
