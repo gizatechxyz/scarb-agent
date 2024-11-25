@@ -542,12 +542,12 @@ dependencies = [
 
 [[package]]
 name = "cairo-io-serde"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cainome-cairo-serde",
  "cairo-lang-sierra",
  "cairo-lang-utils",
- "cairo-vm 1.0.0",
+ "cairo-vm 1.0.1 (git+https://github.com/raphaelDkhn/cairo-vm.git?rev=2738ec0)",
  "hex",
  "itertools 0.12.1",
  "num-traits 0.2.19",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-lang-hints-test-runner"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "cairo-felt",
@@ -696,7 +696,7 @@ dependencies = [
  "cairo-lang-utils",
  "cairo-oracle-hint-processor",
  "cairo-proto-serde",
- "cairo-vm 1.0.0",
+ "cairo-vm 1.0.1 (git+https://github.com/raphaelDkhn/cairo-vm.git?rev=2738ec0)",
  "colored",
  "itertools 0.12.1",
  "num-traits 0.2.19",
@@ -838,7 +838,7 @@ dependencies = [
  "cairo-lang-sierra-type-size",
  "cairo-lang-starknet",
  "cairo-lang-utils",
- "cairo-vm 1.0.1",
+ "cairo-vm 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.12.1",
  "keccak",
  "num-bigint",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-oracle-hint-processor"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1150,7 +1150,7 @@ dependencies = [
  "cairo-lang-sierra-type-size",
  "cairo-lang-utils",
  "cairo-proto-serde",
- "cairo-vm 1.0.0",
+ "cairo-vm 1.0.1 (git+https://github.com/raphaelDkhn/cairo-vm.git?rev=2738ec0)",
  "camino",
  "clap",
  "hex",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "cairo-proto-build"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bytes",
  "cairo-proto-serde",
@@ -1188,10 +1188,10 @@ dependencies = [
 
 [[package]]
 name = "cairo-proto-serde"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cairo-lang-runner",
- "cairo-vm 1.0.0",
+ "cairo-vm 1.0.1 (git+https://github.com/raphaelDkhn/cairo-vm.git?rev=2738ec0)",
  "num-traits 0.2.19",
  "serde",
  "serde_json",
@@ -1199,17 +1199,13 @@ dependencies = [
 
 [[package]]
 name = "cairo-vm"
-version = "1.0.0"
-source = "git+https://github.com/lambdaclass/cairo-vm?rev=v1.0.0#41476335884bf600b62995f0c005be7d384eaec5"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58363ad8065ed891e3b14a8191b707677c7c7cb5b9d10030822506786d8d8108"
 dependencies = [
  "anyhow",
- "ark-ff",
- "ark-std",
  "bincode",
  "bitvec",
- "cairo-lang-casm",
- "cairo-lang-starknet",
- "cairo-lang-starknet-classes",
  "generic-array",
  "hashbrown 0.14.5",
  "hex",
@@ -1235,12 +1231,16 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58363ad8065ed891e3b14a8191b707677c7c7cb5b9d10030822506786d8d8108"
+source = "git+https://github.com/raphaelDkhn/cairo-vm.git?rev=2738ec0#2738ec00c533b9238feea811d6979fa16aeabe3f"
 dependencies = [
  "anyhow",
+ "ark-ff",
+ "ark-std",
  "bincode",
  "bitvec",
+ "cairo-lang-casm",
+ "cairo-lang-starknet",
+ "cairo-lang-starknet-classes",
  "generic-array",
  "hashbrown 0.14.5",
  "hex",
@@ -4875,7 +4875,7 @@ dependencies = [
 
 [[package]]
 name = "scarb-agent"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "bincode",
@@ -4895,7 +4895,7 @@ dependencies = [
  "cairo-oracle-hint-processor",
  "cairo-proto-build",
  "cairo-proto-serde",
- "cairo-vm 1.0.0",
+ "cairo-vm 1.0.1 (git+https://github.com/raphaelDkhn/cairo-vm.git?rev=2738ec0)",
  "camino",
  "clap",
  "colored",
