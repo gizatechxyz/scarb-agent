@@ -265,14 +265,19 @@ pub fn cairo_run_program(
     let serialized_output = if cairo_run_config.serialize_output {
         if cairo_run_config.copy_to_output() {
             // The return value is already serialized, so we can just print the array values
-            let mut output_string = String::from("[");
+            let mut output_felts: Vec<Felt252> = vec![];
             // Skip array_len
             for elem in return_values[1..].iter() {
-                maybe_add_whitespace(&mut output_string);
-                output_string.push_str(&elem.to_string());
+                match elem {
+                    MaybeRelocatable::RelocatableValue(_relocatable) => {
+                        panic!("Element should not be relocatable")
+                    }
+                    MaybeRelocatable::Int(felt) => {
+                        output_felts.push(*felt);
+                    }
+                }
             }
-            output_string.push(']');
-            Some(output_string)
+            Some(process_output(output_felts, schema).expect("Process output failed"))
         } else {
             let serialized = serialize_output(
                 &return_values,
@@ -281,6 +286,7 @@ pub fn cairo_run_program(
                 &sierra_program_registry,
                 &type_sizes,
             );
+
             Some(process_output(serialized, schema).expect("Process output failed"))
         }
     } else {
@@ -1147,10 +1153,4 @@ fn finalize_builtins(
     // Set stop pointer for each builtin
     vm.builtins_final_stack_from_stack_pointer_dict(&builtin_name_to_stack_pointer, false)?;
     Ok(())
-}
-
-fn maybe_add_whitespace(string: &mut String) {
-    if !string.is_empty() && !string.ends_with('[') && !string.ends_with('{') {
-        string.push(' ');
-    }
 }
