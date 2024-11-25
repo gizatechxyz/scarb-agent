@@ -329,6 +329,7 @@ pub fn run_tests(
                     &sierra_program,
                     &name,
                     false,
+                    None
                 );
 
                 Ok((

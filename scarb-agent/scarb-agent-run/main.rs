@@ -39,6 +39,9 @@ struct Args {
     #[clap(long, default_value_t = false)]
     proof_mode: bool,
 
+    #[clap(long)]
+    finalize_builtins: Option<bool>,
+
     #[clap(
         long = "cairo-pie-output",
         conflicts_with_all = ["proof-mode", "air-private-input", "air-public-input"]
@@ -207,6 +210,7 @@ fn run() -> Result<String> {
         &sierra_program,
         "::main",
         args.proof_mode,
+        args.finalize_builtins
     )?;
 
     process_result(Ok(result), args.postprocess)

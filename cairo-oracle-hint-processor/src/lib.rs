@@ -133,6 +133,7 @@ pub fn run_1(
     sierra_program: &SierraProgram,
     entry_func_name: &str,
     proof_mode: bool,
+    finalize_builtins: Option<bool>
 ) -> Result<(Option<String>, CairoRunner), Error> {
     let cairo_run_config = Cairo1RunConfig {
         proof_mode: proof_mode,
@@ -141,7 +142,7 @@ pub fn run_1(
         layout: *layout,
         trace_enabled: trace_file.is_some(), //|| args.air_public_input.is_some(),
         args: &args.0,
-        finalize_builtins: cairo_pie_output.is_some(),
+        finalize_builtins: cairo_pie_output.is_some() || finalize_builtins.is_some(),
         append_return_values: false,
     };
 
